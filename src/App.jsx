@@ -48,7 +48,7 @@ export default function App() {
     return <AdminDashboard session={session} onLogout={handleLogout} />;
   }
 
-  if (session.role === 'resident') {
+  if (session.role === 'owner' || session.role === 'tenant') {
     return <ResidentDashboard session={session} onLogout={handleLogout} />;
   }
 

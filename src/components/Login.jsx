@@ -4,6 +4,7 @@ import { supabase } from '../supabase';
 export default function Login({ onLoginSuccess }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [flatNo, setFlatNo] = useState('001');
+  const [residentRole, setResidentRole] = useState('owner'); // 'owner' or 'tenant'
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -44,21 +45,22 @@ export default function Login({ onLoginSuccess }) {
         }
       } else {
         // Resident Login
+        const passwordColumn = residentRole === 'owner' ? 'owner_password' : 'tenant_password';
         const { data, error: queryError } = await supabase
           .from('flats')
           .select('*')
           .eq('flat_no', flatNo)
-          .eq('password', password)
+          .eq(passwordColumn, password)
           .maybeSingle();
 
         if (queryError) throw queryError;
 
         if (data) {
-          const sessionData = { role: 'resident', flatNo: data.flat_no, flatDetails: data };
+          const sessionData = { role: residentRole, flatNo: data.flat_no, flatDetails: data };
           localStorage.setItem('mmh_session', JSON.stringify(sessionData));
           onLoginSuccess(sessionData);
         } else {
-          setError('Invalid password for flat ' + flatNo);
+          setError(`Invalid ${residentRole} password for flat ${flatNo}`);
         }
       }
     } catch (err) {
@@ -131,22 +133,47 @@ export default function Login({ onLoginSuccess }) {
 
         <form onSubmit={handleLogin}>
           {!isAdmin ? (
-            <div className="input-group">
-              <label htmlFor="flat-select">Flat Number</label>
-              <select
-                id="flat-select"
-                className="input-field"
-                value={flatNo}
-                onChange={(e) => setFlatNo(e.target.value)}
-                style={{ appearance: 'none', background: 'rgba(255,255,255,0.03) url("data:image/svg+xml;utf8,<svg fill=\'%2394a3b8\' height=\'24\' viewBox=\'0 0 24 24\' width=\'24\' xmlns=\'http://www.w3.org/2000/svg\'><path d=\'M7 10l5 5 5-5z\'/></svg>") no-repeat right 12px center' }}
-              >
-                {flats.map(no => (
-                  <option key={no} value={no} style={{ background: 'var(--bg-secondary)', color: 'white' }}>
-                    Flat {no}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <>
+              <div className="input-group">
+                <label htmlFor="flat-select">Flat Number</label>
+                <select
+                  id="flat-select"
+                  className="input-field"
+                  value={flatNo}
+                  onChange={(e) => setFlatNo(e.target.value)}
+                  style={{ appearance: 'none', background: 'rgba(255,255,255,0.03) url("data:image/svg+xml;utf8,<svg fill=\'%2394a3b8\' height=\'24\' viewBox=\'0 0 24 24\' width=\'24\' xmlns=\'http://www.w3.org/2000/svg\'><path d=\'M7 10l5 5 5-5z\'/></svg>") no-repeat right 12px center' }}
+                >
+                  {flats.map(no => (
+                    <option key={no} value={no} style={{ background: 'var(--bg-secondary)', color: 'white' }}>
+                      Flat {no}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                <label style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', padding: '0.6rem 0.8rem', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                  <input
+                    type="radio"
+                    name="residentRole"
+                    checked={residentRole === 'owner'}
+                    onChange={() => { setResidentRole('owner'); setError(''); setPassword(''); }}
+                    style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                  />
+                  Owner
+                </label>
+                <label style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', padding: '0.6rem 0.8rem', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem' }}>
+                  <input
+                    type="radio"
+                    name="residentRole"
+                    checked={residentRole === 'tenant'}
+                    onChange={() => { setResidentRole('tenant'); setError(''); setPassword(''); }}
+                    style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                  />
+                  Tenant
+                </label>
+              </div>
+            </>
           ) : (
             <div className="input-group">
               <label htmlFor="admin-username">Admin Username</label>
@@ -194,8 +221,8 @@ export default function Login({ onLoginSuccess }) {
               </button>
             </div>
             {!isAdmin && (
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                Default password is flat number (e.g. flat001, flat102)
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem', display: 'block' }}>
+                Default: {residentRole} + flat number (e.g. {residentRole}001, {residentRole}102)
               </span>
             )}
           </div>

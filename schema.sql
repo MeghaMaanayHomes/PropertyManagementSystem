@@ -4,8 +4,16 @@
 -- Paste this script in the SQL Editor of your Supabase Dashboard:
 -- https://supabase.com/dashboard/project/rstuapmplhviybvhkoqq
 -- ==========================================
--- NOTE: If you already ran this script previously, run the following SQL command:
--- ALTER TABLE public.flats ADD COLUMN IF NOT EXISTS is_owner_occupied BOOLEAN DEFAULT TRUE;
+-- NOTE: If you already created the tables previously, run these update SQL queries:
+-- ALTER TABLE public.flats ADD COLUMN IF NOT EXISTS tenant_phone TEXT DEFAULT '';
+-- ALTER TABLE public.flats ADD COLUMN IF NOT EXISTS tenant_email TEXT DEFAULT '';
+-- ALTER TABLE public.flats ADD COLUMN IF NOT EXISTS occupancy_from DATE;
+-- ALTER TABLE public.flats ADD COLUMN IF NOT EXISTS owner_password TEXT;
+-- ALTER TABLE public.flats ADD COLUMN IF NOT EXISTS tenant_password TEXT;
+-- UPDATE public.flats SET owner_password = 'owner' || flat_no WHERE owner_password IS NULL;
+-- UPDATE public.flats SET tenant_password = 'tenant' || flat_no WHERE tenant_password IS NULL;
+-- ALTER TABLE public.flats ALTER COLUMN owner_password SET NOT NULL;
+-- ALTER TABLE public.flats ALTER COLUMN tenant_password SET NOT NULL;
 -- ==========================================
 
 -- 1. Create flats table
@@ -15,9 +23,13 @@ CREATE TABLE IF NOT EXISTS public.flats (
     tenant_name TEXT DEFAULT '',
     is_vacant BOOLEAN DEFAULT TRUE,
     is_owner_occupied BOOLEAN DEFAULT TRUE,
-    phone_number TEXT DEFAULT '',
-    email TEXT DEFAULT '',
-    password TEXT NOT NULL, -- Default will be 'flat' + flat_no (e.g. 'flat001')
+    phone_number TEXT DEFAULT '', -- Owner Phone
+    email TEXT DEFAULT '', -- Owner Email
+    tenant_phone TEXT DEFAULT '',
+    tenant_email TEXT DEFAULT '',
+    occupancy_from DATE,
+    owner_password TEXT NOT NULL, -- Default: 'owner' + flat_no (e.g. 'owner001')
+    tenant_password TEXT NOT NULL, -- Default: 'tenant' + flat_no (e.g. 'tenant001')
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
@@ -74,11 +86,11 @@ ALTER TABLE public.announcements DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.complaints DISABLE ROW LEVEL SECURITY;
 
 -- 8. Populate all 40 flats (001-008 to 401-408)
-INSERT INTO public.flats (flat_no, is_vacant, password)
+INSERT INTO public.flats (flat_no, is_vacant, owner_password, tenant_password)
 VALUES
-('001', true, 'flat001'), ('002', true, 'flat002'), ('003', true, 'flat003'), ('004', true, 'flat004'), ('005', true, 'flat005'), ('006', true, 'flat006'), ('007', true, 'flat007'), ('008', true, 'flat008'),
-('101', true, 'flat101'), ('102', true, 'flat102'), ('103', true, 'flat103'), ('104', true, 'flat104'), ('105', true, 'flat105'), ('106', true, 'flat106'), ('107', true, 'flat107'), ('108', true, 'flat108'),
-('201', true, 'flat201'), ('202', true, 'flat202'), ('203', true, 'flat203'), ('204', true, 'flat204'), ('205', true, 'flat205'), ('206', true, 'flat206'), ('207', true, 'flat207'), ('208', true, 'flat208'),
-('301', true, 'flat301'), ('302', true, 'flat302'), ('303', true, 'flat303'), ('304', true, 'flat304'), ('305', true, 'flat305'), ('306', true, 'flat306'), ('307', true, 'flat307'), ('308', true, 'flat308'),
-('401', true, 'flat401'), ('402', true, 'flat402'), ('403', true, 'flat403'), ('404', true, 'flat404'), ('405', true, 'flat405'), ('406', true, 'flat406'), ('407', true, 'flat407'), ('408', true, 'flat408')
+('001', true, 'owner001', 'tenant001'), ('002', true, 'owner002', 'tenant002'), ('003', true, 'owner003', 'tenant003'), ('004', true, 'owner004', 'tenant004'), ('005', true, 'owner005', 'tenant005'), ('006', true, 'owner006', 'tenant006'), ('007', true, 'owner007', 'tenant007'), ('008', true, 'owner008', 'tenant008'),
+('101', true, 'owner101', 'tenant101'), ('102', true, 'owner102', 'tenant102'), ('103', true, 'owner103', 'tenant103'), ('104', true, 'owner104', 'tenant104'), ('105', true, 'owner105', 'tenant105'), ('106', true, 'owner106', 'tenant106'), ('107', true, 'owner107', 'tenant107'), ('108', true, 'owner108', 'tenant108'),
+('201', true, 'owner201', 'tenant201'), ('202', true, 'owner202', 'tenant202'), ('203', true, 'owner203', 'tenant203'), ('204', true, 'owner204', 'tenant204'), ('205', true, 'owner205', 'tenant205'), ('206', true, 'owner206', 'tenant206'), ('207', true, 'owner207', 'tenant207'), ('208', true, 'owner208', 'tenant208'),
+('301', true, 'owner301', 'tenant301'), ('302', true, 'owner302', 'tenant302'), ('303', true, 'owner303', 'tenant303'), ('304', true, 'owner304', 'tenant304'), ('305', true, 'owner305', 'tenant305'), ('306', true, 'owner306', 'tenant306'), ('307', true, 'owner307', 'tenant307'), ('308', true, 'owner308', 'tenant308'),
+('401', true, 'owner401', 'tenant401'), ('402', true, 'owner402', 'tenant402'), ('403', true, 'owner403', 'tenant403'), ('404', true, 'owner404', 'tenant404'), ('405', true, 'owner405', 'tenant405'), ('406', true, 'owner406', 'tenant406'), ('407', true, 'owner407', 'tenant407'), ('408', true, 'owner408', 'tenant408')
 ON CONFLICT (flat_no) DO NOTHING;

@@ -124,12 +124,16 @@ export default function AdminDashboard({ session, onLogout }) {
         .from('flats')
         .update({
           owner_name: editingFlat.owner_name,
-          tenant_name: editingFlat.tenant_name,
+          tenant_name: editingFlat.is_vacant || editingFlat.is_owner_occupied ? '' : editingFlat.tenant_name,
           is_vacant: editingFlat.is_vacant,
           is_owner_occupied: editingFlat.is_owner_occupied,
           phone_number: editingFlat.phone_number,
           email: editingFlat.email,
-          password: editingFlat.password
+          tenant_phone: editingFlat.is_vacant || editingFlat.is_owner_occupied ? '' : editingFlat.tenant_phone,
+          tenant_email: editingFlat.is_vacant || editingFlat.is_owner_occupied ? '' : editingFlat.tenant_email,
+          occupancy_from: editingFlat.is_vacant ? null : (editingFlat.occupancy_from || null),
+          owner_password: editingFlat.owner_password,
+          tenant_password: editingFlat.tenant_password
         })
         .eq('flat_no', editingFlat.flat_no);
 
@@ -752,66 +756,65 @@ export default function AdminDashboard({ session, onLogout }) {
       {/* EDIT FLAT MODAL */}
       {editingFlat && (
         <div className="modal-overlay">
-          <div className="modal-content glass-panel glow-primary">
+          <div className="modal-content glass-panel glow-primary" style={{ maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
             <h2 style={{ marginBottom: '1.5rem' }}>Edit Details - Flat {editingFlat.flat_no}</h2>
             <form onSubmit={handleUpdateFlat}>
-              <div className="input-group">
-                <label htmlFor="owner-name-input">Owner Name</label>
-                <input
-                  id="owner-name-input"
-                  type="text"
-                  className="input-field"
-                  value={editingFlat.owner_name || ''}
-                  onChange={(e) => setEditingFlat({ ...editingFlat, owner_name: e.target.value })}
-                />
+              <h4 style={{ color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.25rem', marginBottom: '1rem' }}>Owner Info</h4>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div className="input-group">
+                  <label htmlFor="owner-name-input">Owner Name</label>
+                  <input
+                    id="owner-name-input"
+                    type="text"
+                    className="input-field"
+                    style={{ padding: '0.5rem' }}
+                    value={editingFlat.owner_name || ''}
+                    onChange={(e) => setEditingFlat({ ...editingFlat, owner_name: e.target.value })}
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label htmlFor="phone-input">Owner Phone</label>
+                  <input
+                    id="phone-input"
+                    type="text"
+                    className="input-field"
+                    style={{ padding: '0.5rem' }}
+                    value={editingFlat.phone_number || ''}
+                    onChange={(e) => setEditingFlat({ ...editingFlat, phone_number: e.target.value })}
+                  />
+                </div>
               </div>
 
-              <div className="input-group">
-                <label htmlFor="tenant-name-input">Tenant Name</label>
-                <input
-                  id="tenant-name-input"
-                  type="text"
-                  className="input-field"
-                  value={editingFlat.tenant_name || ''}
-                  onChange={(e) => setEditingFlat({ ...editingFlat, tenant_name: e.target.value })}
-                />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div className="input-group">
+                  <label htmlFor="email-input">Owner Email</label>
+                  <input
+                    id="email-input"
+                    type="email"
+                    className="input-field"
+                    style={{ padding: '0.5rem' }}
+                    value={editingFlat.email || ''}
+                    onChange={(e) => setEditingFlat({ ...editingFlat, email: e.target.value })}
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label htmlFor="owner-password-input">Owner Password</label>
+                  <input
+                    id="owner-password-input"
+                    type="text"
+                    className="input-field"
+                    style={{ padding: '0.5rem' }}
+                    value={editingFlat.owner_password || ''}
+                    onChange={(e) => setEditingFlat({ ...editingFlat, owner_password: e.target.value })}
+                    required
+                  />
+                </div>
               </div>
 
-              <div className="input-group">
-                <label htmlFor="phone-input">Contact Phone</label>
-                <input
-                  id="phone-input"
-                  type="text"
-                  className="input-field"
-                  value={editingFlat.phone_number || ''}
-                  onChange={(e) => setEditingFlat({ ...editingFlat, phone_number: e.target.value })}
-                />
-              </div>
-
-              <div className="input-group">
-                <label htmlFor="email-input">Contact Email</label>
-                <input
-                  id="email-input"
-                  type="email"
-                  className="input-field"
-                  value={editingFlat.email || ''}
-                  onChange={(e) => setEditingFlat({ ...editingFlat, email: e.target.value })}
-                />
-              </div>
-
-              <div className="input-group">
-                <label htmlFor="password-input">Portal Password</label>
-                <input
-                  id="password-input"
-                  type="text"
-                  className="input-field"
-                  value={editingFlat.password}
-                  onChange={(e) => setEditingFlat({ ...editingFlat, password: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', margin: '1.5rem 0' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', margin: '1rem 0' }}>
                 <div className="input-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.75rem', marginBottom: 0 }}>
                   <input
                     id="vacant-checkbox"
@@ -827,7 +830,7 @@ export default function AdminDashboard({ session, onLogout }) {
                     }}
                     style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                   />
-                  <label htmlFor="vacant-checkbox" style={{ cursor: 'pointer' }}>Mark Flat as Vacant</label>
+                  <label htmlFor="vacant-checkbox" style={{ cursor: 'pointer', fontSize: '0.9rem' }}>Mark Flat as Vacant</label>
                 </div>
 
                 {!editingFlat.is_vacant && (
@@ -839,12 +842,86 @@ export default function AdminDashboard({ session, onLogout }) {
                       onChange={(e) => setEditingFlat({ ...editingFlat, is_owner_occupied: e.target.checked })}
                       style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                     />
-                    <label htmlFor="owner-occupied-checkbox" style={{ cursor: 'pointer' }}>Owner Occupied (uncheck if Rented Out / Tenant)</label>
+                    <label htmlFor="owner-occupied-checkbox" style={{ cursor: 'pointer', fontSize: '0.9rem' }}>Owner Occupied (uncheck if Rented Out)</label>
                   </div>
                 )}
               </div>
 
-              <div className="flex-center gap-2" style={{ marginTop: '2rem' }}>
+              {!editingFlat.is_vacant && (
+                <div className="input-group">
+                  <label htmlFor="occupancy-from-input">Occupancy From Date</label>
+                  <input
+                    id="occupancy-from-input"
+                    type="date"
+                    className="input-field"
+                    style={{ padding: '0.5rem' }}
+                    value={editingFlat.occupancy_from || ''}
+                    onChange={(e) => setEditingFlat({ ...editingFlat, occupancy_from: e.target.value })}
+                  />
+                </div>
+              )}
+
+              {!editingFlat.is_vacant && !editingFlat.is_owner_occupied && (
+                <fieldset style={{ border: '1px solid var(--glass-border)', padding: '0.75rem', borderRadius: '8px', marginBottom: '1.25rem', background: 'rgba(255,255,255,0.01)' }}>
+                  <legend style={{ fontSize: '0.75rem', color: 'var(--primary)', padding: '0 0.5rem', fontWeight: 'bold' }}>Tenant Info</legend>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="input-group" style={{ marginBottom: '0.5rem' }}>
+                      <label htmlFor="tenant-name-input">Tenant Name</label>
+                      <input
+                        id="tenant-name-input"
+                        type="text"
+                        className="input-field"
+                        style={{ padding: '0.5rem' }}
+                        value={editingFlat.tenant_name || ''}
+                        onChange={(e) => setEditingFlat({ ...editingFlat, tenant_name: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="input-group" style={{ marginBottom: '0.5rem' }}>
+                      <label htmlFor="tenant-password-input">Tenant Password</label>
+                      <input
+                        id="tenant-password-input"
+                        type="text"
+                        className="input-field"
+                        style={{ padding: '0.5rem' }}
+                        value={editingFlat.tenant_password || ''}
+                        onChange={(e) => setEditingFlat({ ...editingFlat, tenant_password: e.target.value })}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="input-group" style={{ marginBottom: '0.5rem' }}>
+                      <label htmlFor="tenant-phone-input">Tenant Phone</label>
+                      <input
+                        id="tenant-phone-input"
+                        type="text"
+                        className="input-field"
+                        style={{ padding: '0.5rem' }}
+                        value={editingFlat.tenant_phone || ''}
+                        onChange={(e) => setEditingFlat({ ...editingFlat, tenant_phone: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="input-group" style={{ marginBottom: '0.5rem' }}>
+                      <label htmlFor="tenant-email-input">Tenant Email</label>
+                      <input
+                        id="tenant-email-input"
+                        type="email"
+                        className="input-field"
+                        style={{ padding: '0.5rem' }}
+                        value={editingFlat.tenant_email || ''}
+                        onChange={(e) => setEditingFlat({ ...editingFlat, tenant_email: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </fieldset>
+              )}
+
+              <div className="flex-center gap-2" style={{ marginTop: '1.5rem' }}>
                 <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setEditingFlat(null)}>
                   Cancel
                 </button>
