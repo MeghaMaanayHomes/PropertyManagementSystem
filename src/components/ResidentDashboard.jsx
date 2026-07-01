@@ -14,6 +14,7 @@ export default function ResidentDashboard({ session, onLogout }) {
   const [submittingComplaint, setSubmittingComplaint] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordMessage, setPasswordMessage] = useState({ type: '', text: '' });
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Current month maintenance status
   const [currentMonthStatus, setCurrentMonthStatus] = useState({
@@ -160,8 +161,44 @@ export default function ResidentDashboard({ session, onLogout }) {
 
   return (
     <div className="app-container">
-      {/* Sidebar */}
-      <aside className="sidebar glass-panel" style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>
+      {/* Mobile Top Header */}
+      <header className="mobile-header">
+        <h2 style={{ fontSize: '1.15rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+          <span style={{ color: 'var(--primary)', fontWeight: '800' }}>Flat {flatNo}</span>
+        </h2>
+        <button
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="btn btn-secondary"
+          style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+      </header>
+
+      {/* Backdrop for Mobile Sidebar Drawer */}
+      {isMobileMenuOpen && (
+        <div className="sidebar-backdrop" onClick={() => setIsMobileMenuOpen(false)}></div>
+      )}
+
+      {/* Sidebar Drawer */}
+      <aside className={`sidebar glass-panel ${isMobileMenuOpen ? 'open' : ''}`} style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>
+        {/* Mobile menu close button */}
+        <div className="mobile-only" style={{ alignSelf: 'flex-end', marginBottom: '1rem' }}>
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '0.25rem' }}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
         <div style={{ marginBottom: '2rem' }}>
           <h2 style={{ fontSize: '1.25rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ color: 'var(--primary)', fontWeight: '800' }}>Flat {flatNo}</span>
@@ -169,9 +206,9 @@ export default function ResidentDashboard({ session, onLogout }) {
           <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Resident Portal</p>
         </div>
 
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <button
-            onClick={() => setActiveTab('overview')}
+            onClick={() => { setActiveTab('overview'); setIsMobileMenuOpen(false); }}
             className={`btn ${activeTab === 'overview' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -182,7 +219,7 @@ export default function ResidentDashboard({ session, onLogout }) {
             My Flat
           </button>
           <button
-            onClick={() => setActiveTab('payments')}
+            onClick={() => { setActiveTab('payments'); setIsMobileMenuOpen(false); }}
             className={`btn ${activeTab === 'payments' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -192,7 +229,7 @@ export default function ResidentDashboard({ session, onLogout }) {
             Payments
           </button>
           <button
-            onClick={() => setActiveTab('notices')}
+            onClick={() => { setActiveTab('notices'); setIsMobileMenuOpen(false); }}
             className={`btn ${activeTab === 'notices' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -208,7 +245,7 @@ export default function ResidentDashboard({ session, onLogout }) {
             )}
           </button>
           <button
-            onClick={() => setActiveTab('complaints')}
+            onClick={() => { setActiveTab('complaints'); setIsMobileMenuOpen(false); }}
             className={`btn ${activeTab === 'complaints' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -218,7 +255,7 @@ export default function ResidentDashboard({ session, onLogout }) {
             Complaints
           </button>
           <button
-            onClick={() => setActiveTab('settings')}
+            onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }}
             className={`btn ${activeTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -233,7 +270,7 @@ export default function ResidentDashboard({ session, onLogout }) {
         <button
           onClick={onLogout}
           className="btn btn-secondary"
-          style={{ marginTop: '2rem', justifyContent: 'center' }}
+          style={{ marginTop: 'auto', justifyContent: 'center' }}
         >
           <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -261,7 +298,7 @@ export default function ResidentDashboard({ session, onLogout }) {
                   <p style={{ color: 'var(--text-secondary)' }}>Apartment Resident Dashboard</p>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', flexWrap: 'wrap' }}>
+                <div className="grid-split-1-1">
                   {/* Flat Details Panel */}
                   <div className="glass-panel" style={{ padding: '1.5rem' }}>
                     <h3 style={{ marginBottom: '1.25rem', fontSize: '1.1rem', color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
@@ -283,7 +320,9 @@ export default function ResidentDashboard({ session, onLogout }) {
                       <span style={{ color: 'var(--text-secondary)' }}>Status:</span>
                       <div>
                         <span className={`badge ${flatDetails.is_vacant ? 'badge-vacant' : 'badge-occupied'}`}>
-                          {flatDetails.is_vacant ? 'Vacant' : 'Occupied'}
+                          {flatDetails.is_vacant 
+                            ? 'Vacant' 
+                            : (flatDetails.is_owner_occupied ? 'Owner Occupied' : 'Rented Out')}
                         </span>
                       </div>
                     </div>
@@ -324,7 +363,7 @@ export default function ResidentDashboard({ session, onLogout }) {
                 </div>
 
                 {/* Split layout for Notice board and quick Complaint */}
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
+                <div className="grid-split-2-1" style={{ marginTop: '1.5rem' }}>
                   {/* Notices Section */}
                   <div className="glass-panel" style={{ padding: '1.5rem' }}>
                     <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Recent Notices</h3>
@@ -487,7 +526,7 @@ export default function ResidentDashboard({ session, onLogout }) {
                   <p style={{ color: 'var(--text-secondary)' }}>Track and raise maintenance or service requests</p>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', flexWrap: 'wrap' }}>
+                <div className="grid-split-1-1">
                   {/* Complaints List */}
                   <div className="glass-panel" style={{ padding: '1.5rem' }}>
                     <h3 style={{ marginBottom: '1.25rem', fontSize: '1.1rem' }}>Complaint History</h3>

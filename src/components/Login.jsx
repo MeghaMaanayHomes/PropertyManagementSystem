@@ -6,6 +6,7 @@ export default function Login({ onLoginSuccess }) {
   const [flatNo, setFlatNo] = useState('001');
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -83,7 +84,7 @@ export default function Login({ onLoginSuccess }) {
           <button
             type="button"
             className="btn"
-            onClick={() => { setIsAdmin(false); setError(''); setPassword(''); }}
+            onClick={() => { setIsAdmin(false); setError(''); setPassword(''); setShowPassword(false); }}
             style={{
               flex: 1,
               padding: '0.5rem 1rem',
@@ -99,7 +100,7 @@ export default function Login({ onLoginSuccess }) {
           <button
             type="button"
             className="btn"
-            onClick={() => { setIsAdmin(true); setError(''); setPassword(''); }}
+            onClick={() => { setIsAdmin(true); setError(''); setPassword(''); setShowPassword(false); }}
             style={{
               flex: 1,
               padding: '0.5rem 1rem',
@@ -163,15 +164,35 @@ export default function Login({ onLoginSuccess }) {
 
           <div className="input-group" style={{ marginBottom: '2rem' }}>
             <label htmlFor="password-field">Password</label>
-            <input
-              id="password-field"
-              type="password"
-              className="input-field"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="••••••••"
-            />
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
+              <input
+                id="password-field"
+                type={showPassword ? "text" : "password"}
+                className="input-field"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder={isAdmin ? "••••••••" : "e.g. flat001"}
+                style={{ width: '100%', paddingRight: '3.5rem' }}
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  position: 'absolute',
+                  right: '12px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: '600'
+                }}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
             {!isAdmin && (
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
                 Default password is flat number (e.g. flat001, flat102)

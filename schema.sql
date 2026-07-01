@@ -4,6 +4,9 @@
 -- Paste this script in the SQL Editor of your Supabase Dashboard:
 -- https://supabase.com/dashboard/project/rstuapmplhviybvhkoqq
 -- ==========================================
+-- NOTE: If you already ran this script previously, run the following SQL command:
+-- ALTER TABLE public.flats ADD COLUMN IF NOT EXISTS is_owner_occupied BOOLEAN DEFAULT TRUE;
+-- ==========================================
 
 -- 1. Create flats table
 CREATE TABLE IF NOT EXISTS public.flats (
@@ -11,6 +14,7 @@ CREATE TABLE IF NOT EXISTS public.flats (
     owner_name TEXT DEFAULT '',
     tenant_name TEXT DEFAULT '',
     is_vacant BOOLEAN DEFAULT TRUE,
+    is_owner_occupied BOOLEAN DEFAULT TRUE,
     phone_number TEXT DEFAULT '',
     email TEXT DEFAULT '',
     password TEXT NOT NULL, -- Default will be 'flat' + flat_no (e.g. 'flat001')

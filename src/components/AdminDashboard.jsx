@@ -19,6 +19,7 @@ export default function AdminDashboard({ session, onLogout }) {
   const [newNotice, setNewNotice] = useState({ title: '', content: '' });
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [selectedComplaint, setSelectedComplaint] = useState(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Statistics
   const [stats, setStats] = useState({
@@ -125,6 +126,7 @@ export default function AdminDashboard({ session, onLogout }) {
           owner_name: editingFlat.owner_name,
           tenant_name: editingFlat.tenant_name,
           is_vacant: editingFlat.is_vacant,
+          is_owner_occupied: editingFlat.is_owner_occupied,
           phone_number: editingFlat.phone_number,
           email: editingFlat.email,
           password: editingFlat.password
@@ -220,8 +222,44 @@ export default function AdminDashboard({ session, onLogout }) {
 
   return (
     <div className="app-container">
-      {/* Sidebar */}
-      <aside className="sidebar glass-panel" style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>
+      {/* Mobile Top Header */}
+      <header className="mobile-header">
+        <h2 style={{ fontSize: '1.15rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+          <span style={{ color: 'var(--primary)', fontWeight: '800' }}>MMH</span> Admin
+        </h2>
+        <button
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="btn btn-secondary"
+          style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+      </header>
+
+      {/* Backdrop for Mobile Sidebar Drawer */}
+      {isMobileMenuOpen && (
+        <div className="sidebar-backdrop" onClick={() => setIsMobileMenuOpen(false)}></div>
+      )}
+
+      {/* Sidebar Drawer */}
+      <aside className={`sidebar glass-panel ${isMobileMenuOpen ? 'open' : ''}`} style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>
+        {/* Mobile menu close button */}
+        <div className="mobile-only" style={{ alignSelf: 'flex-end', marginBottom: '1rem' }}>
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '0.25rem' }}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
         <div style={{ marginBottom: '2rem' }}>
           <h2 style={{ fontSize: '1.25rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ color: 'var(--primary)', fontWeight: '800' }}>MMH</span> Admin
@@ -229,9 +267,9 @@ export default function AdminDashboard({ session, onLogout }) {
           <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Management Portal</p>
         </div>
 
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <button
-            onClick={() => setActiveTab('overview')}
+            onClick={() => { setActiveTab('overview'); setIsMobileMenuOpen(false); }}
             className={`btn ${activeTab === 'overview' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -244,7 +282,7 @@ export default function AdminDashboard({ session, onLogout }) {
             Overview
           </button>
           <button
-            onClick={() => setActiveTab('flats')}
+            onClick={() => { setActiveTab('flats'); setIsMobileMenuOpen(false); }}
             className={`btn ${activeTab === 'flats' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -255,7 +293,7 @@ export default function AdminDashboard({ session, onLogout }) {
             Flats Directory
           </button>
           <button
-            onClick={() => setActiveTab('ledger')}
+            onClick={() => { setActiveTab('ledger'); setIsMobileMenuOpen(false); }}
             className={`btn ${activeTab === 'ledger' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -265,7 +303,7 @@ export default function AdminDashboard({ session, onLogout }) {
             Maintenance Ledger
           </button>
           <button
-            onClick={() => setActiveTab('notices')}
+            onClick={() => { setActiveTab('notices'); setIsMobileMenuOpen(false); }}
             className={`btn ${activeTab === 'notices' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -276,7 +314,7 @@ export default function AdminDashboard({ session, onLogout }) {
             Announcements
           </button>
           <button
-            onClick={() => setActiveTab('complaints')}
+            onClick={() => { setActiveTab('complaints'); setIsMobileMenuOpen(false); }}
             className={`btn ${activeTab === 'complaints' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -295,7 +333,7 @@ export default function AdminDashboard({ session, onLogout }) {
         <button
           onClick={onLogout}
           className="btn btn-secondary"
-          style={{ marginTop: '2rem', justifyContent: 'center' }}
+          style={{ marginTop: 'auto', justifyContent: 'center' }}
         >
           <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -368,7 +406,7 @@ export default function AdminDashboard({ session, onLogout }) {
                 </div>
 
                 {/* Main Overview Dashboard Split */}
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem', flexWrap: 'wrap' }}>
+                <div className="grid-split-2-1">
                   {/* Recent Activity / Quick Status */}
                   <div className="glass-panel" style={{ padding: '1.5rem' }}>
                     <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Active Maintenance Dues Overview</h3>
@@ -390,7 +428,11 @@ export default function AdminDashboard({ session, onLogout }) {
                             const status = record ? record.payment_status : 'Unpaid';
                             const due = record ? record.amount_due : 2000;
                             const outstanding = Math.max(0, due - paid);
-                            const name = flat.is_vacant ? 'Vacant' : (flat.tenant_name || flat.owner_name || 'Occupant');
+                            const name = flat.is_vacant 
+                              ? 'Vacant' 
+                              : (flat.is_owner_occupied 
+                                  ? (flat.owner_name ? `Owner: ${flat.owner_name}` : 'Owner Occupied') 
+                                  : (flat.tenant_name ? `Tenant: ${flat.tenant_name}` : 'Rented Out'));
 
                             return (
                               <tr key={flat.flat_no} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
@@ -481,7 +523,11 @@ export default function AdminDashboard({ session, onLogout }) {
                       <div className="floor-label">Floor {floorNum}</div>
                       <div className="flat-grid">
                         {floors[floorNum].map(flat => {
-                          const name = flat.is_vacant ? 'Vacant' : (flat.tenant_name || flat.owner_name || 'Occupant');
+                          const name = flat.is_vacant 
+                            ? 'Vacant' 
+                            : (flat.is_owner_occupied 
+                                ? (flat.owner_name ? `Owner: ${flat.owner_name}` : 'Owner') 
+                                : (flat.tenant_name ? `Tenant: ${flat.tenant_name}` : 'Tenant'));
                           return (
                             <div
                               key={flat.flat_no}
@@ -494,7 +540,9 @@ export default function AdminDashboard({ session, onLogout }) {
                                   {name}
                                 </div>
                                 <span className={`badge ${flat.is_vacant ? 'badge-vacant' : 'badge-occupied'}`} style={{ fontSize: '0.65rem', padding: '1px 5px', marginTop: '0.25rem' }}>
-                                  {flat.is_vacant ? 'Vacant' : 'Occupied'}
+                                  {flat.is_vacant 
+                                    ? 'Vacant' 
+                                    : (flat.is_owner_occupied ? 'Owner Occupied' : 'Rented Out')}
                                 </span>
                               </div>
                             </div>
@@ -550,7 +598,11 @@ export default function AdminDashboard({ session, onLogout }) {
                         const status = record ? record.payment_status : 'Unpaid';
                         const method = record ? record.payment_method : '-';
                         const date = record && record.payment_date ? new Date(record.payment_date).toLocaleDateString() : '-';
-                        const occupantName = flat.is_vacant ? 'Vacant' : (flat.tenant_name || flat.owner_name || 'Occupant');
+                        const occupantName = flat.is_vacant 
+                          ? 'Vacant' 
+                          : (flat.is_owner_occupied 
+                              ? (flat.owner_name ? `Owner: ${flat.owner_name}` : 'Owner') 
+                              : (flat.tenant_name ? `Tenant: ${flat.tenant_name}` : 'Tenant'));
 
                         return (
                           <tr key={flat.flat_no} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
@@ -759,15 +811,37 @@ export default function AdminDashboard({ session, onLogout }) {
                 />
               </div>
 
-              <div className="input-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.75rem', margin: '1.5rem 0' }}>
-                <input
-                  id="vacant-checkbox"
-                  type="checkbox"
-                  checked={editingFlat.is_vacant}
-                  onChange={(e) => setEditingFlat({ ...editingFlat, is_vacant: e.target.checked })}
-                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                />
-                <label htmlFor="vacant-checkbox" style={{ cursor: 'pointer' }}>Mark Flat as Vacant</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', margin: '1.5rem 0' }}>
+                <div className="input-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.75rem', marginBottom: 0 }}>
+                  <input
+                    id="vacant-checkbox"
+                    type="checkbox"
+                    checked={editingFlat.is_vacant}
+                    onChange={(e) => {
+                      const vacant = e.target.checked;
+                      setEditingFlat({
+                        ...editingFlat,
+                        is_vacant: vacant,
+                        is_owner_occupied: vacant ? true : (editingFlat.is_owner_occupied ?? true)
+                      });
+                    }}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="vacant-checkbox" style={{ cursor: 'pointer' }}>Mark Flat as Vacant</label>
+                </div>
+
+                {!editingFlat.is_vacant && (
+                  <div className="input-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.75rem', marginBottom: 0 }}>
+                    <input
+                      id="owner-occupied-checkbox"
+                      type="checkbox"
+                      checked={editingFlat.is_owner_occupied ?? true}
+                      onChange={(e) => setEditingFlat({ ...editingFlat, is_owner_occupied: e.target.checked })}
+                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                    />
+                    <label htmlFor="owner-occupied-checkbox" style={{ cursor: 'pointer' }}>Owner Occupied (uncheck if Rented Out / Tenant)</label>
+                  </div>
+                )}
               </div>
 
               <div className="flex-center gap-2" style={{ marginTop: '2rem' }}>
@@ -793,7 +867,7 @@ export default function AdminDashboard({ session, onLogout }) {
             </p>
 
             <form onSubmit={handleRecordPayment}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="grid-split-1-1" style={{ gap: '1rem', marginBottom: '1.25rem' }}>
                 <div className="input-group">
                   <label htmlFor="amount-due-input">Amount Due (₹)</label>
                   <input
