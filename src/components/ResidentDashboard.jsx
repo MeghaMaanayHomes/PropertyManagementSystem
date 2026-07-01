@@ -294,7 +294,7 @@ export default function ResidentDashboard({ session, onLogout }) {
             {activeTab === 'overview' && (
               <div>
                 <div className="mb-4">
-                  <h1 style={{ fontSize: '1.75rem' }}>Welcome to Flat {flatNo}</h1>
+                  <h1 style={{ fontSize: '1.75rem' }}>Welcome, Flat {flatNo}</h1>
                   <p style={{ color: 'var(--text-secondary)' }}>Apartment Resident Dashboard</p>
                 </div>
 
