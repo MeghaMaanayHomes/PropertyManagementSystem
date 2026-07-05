@@ -319,6 +319,10 @@ h1, h2, h3, h4, h5, h6 {
   display: none;
 }
 
+.desktop-only {
+  display: block;
+}
+
 /* Responsive Grid Split Layouts */
 .grid-split-2-1 {
   display: grid;
@@ -354,6 +358,10 @@ h1, h2, h3, h4, h5, h6 {
 
   .mobile-only {
     display: block !important;
+  }
+
+  .desktop-only {
+    display: none !important;
   }
 
   /* Mobile Top Bar */

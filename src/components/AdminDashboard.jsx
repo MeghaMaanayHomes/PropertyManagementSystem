@@ -549,6 +549,296 @@ export default function AdminDashboard({ session, onLogout }) {
             <p style={{ color: 'var(--text-secondary)' }}>Loading dashboard data...</p>
             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
+        ) : editingFlat ? (
+          <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', marginBottom: '2rem' }}>
+              <button
+                type="button"
+                onClick={() => setEditingFlat(null)}
+                className="btn btn-secondary"
+                style={{ padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+              >
+                <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Back
+              </button>
+              <div>
+                <h1 style={{ fontSize: '1.85rem', margin: 0 }}>Edit Details</h1>
+                <p style={{ color: 'var(--text-secondary)', margin: 0 }}>Managing Flat {editingFlat.flat_no}</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleUpdateFlat} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <div className="glass-panel" style={{ padding: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.15rem', color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  Owner Information
+                </h3>
+                <div className="grid-split-1-1" style={{ gap: '1rem' }}>
+                  <div className="input-group">
+                    <label htmlFor="owner-name-input">Owner Name</label>
+                    <input
+                      id="owner-name-input"
+                      type="text"
+                      className="input-field"
+                      style={{ padding: '0.6rem' }}
+                      value={editingFlat.owner_name || ''}
+                      onChange={(e) => setEditingFlat({ ...editingFlat, owner_name: e.target.value })}
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label htmlFor="phone-input">Owner Phone</label>
+                    <input
+                      id="phone-input"
+                      type="text"
+                      className="input-field"
+                      style={{ padding: '0.6rem' }}
+                      value={editingFlat.phone_number || ''}
+                      onChange={(e) => setEditingFlat({ ...editingFlat, phone_number: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="grid-split-1-1" style={{ gap: '1rem', marginTop: '1rem' }}>
+                  <div className="input-group">
+                    <label htmlFor="email-input">Owner Email</label>
+                    <input
+                      id="email-input"
+                      type="email"
+                      className="input-field"
+                      style={{ padding: '0.6rem' }}
+                      value={editingFlat.email || ''}
+                      onChange={(e) => setEditingFlat({ ...editingFlat, email: e.target.value })}
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label htmlFor="owner-password-input">Owner Password</label>
+                    <input
+                      id="owner-password-input"
+                      type="text"
+                      className="input-field"
+                      style={{ padding: '0.6rem' }}
+                      value={editingFlat.owner_password || ''}
+                      onChange={(e) => setEditingFlat({ ...editingFlat, owner_password: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.15rem', color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                  Occupancy Status
+                </h3>
+                <div className="input-group" style={{ marginBottom: '1.25rem' }}>
+                  <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', cursor: 'pointer', fontWeight: '500' }}>
+                      <input
+                        type="radio"
+                        name="admin_page_occupancy_status"
+                        checked={editingFlat.is_vacant === true}
+                        onChange={() => setEditingFlat({ ...editingFlat, is_vacant: true, is_owner_occupied: true })}
+                        style={{ accentColor: 'var(--primary)', width: '18px', height: '18px' }}
+                      />
+                      Vacant
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', cursor: 'pointer', fontWeight: '500' }}>
+                      <input
+                        type="radio"
+                        name="admin_page_occupancy_status"
+                        checked={editingFlat.is_vacant === false && editingFlat.is_owner_occupied === true}
+                        onChange={() => setEditingFlat({ ...editingFlat, is_vacant: false, is_owner_occupied: true })}
+                        style={{ accentColor: 'var(--primary)', width: '18px', height: '18px' }}
+                      />
+                      Occupied by Owner
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', cursor: 'pointer', fontWeight: '500' }}>
+                      <input
+                        type="radio"
+                        name="admin_page_occupancy_status"
+                        checked={editingFlat.is_vacant === false && editingFlat.is_owner_occupied === false}
+                        onChange={() => setEditingFlat({ ...editingFlat, is_vacant: false, is_owner_occupied: false })}
+                        style={{ accentColor: 'var(--primary)', width: '18px', height: '18px' }}
+                      />
+                      Rented out to Tenant
+                    </label>
+                  </div>
+                </div>
+
+                {!editingFlat.is_vacant && editingFlat.is_owner_occupied && (
+                  <div className="input-group" style={{ marginBottom: 0, marginTop: '1rem' }}>
+                    <label htmlFor="occupancy-from-input">Occupied Since Date</label>
+                    <input
+                      id="occupancy-from-input"
+                      type="date"
+                      className="input-field"
+                      style={{ padding: '0.6rem' }}
+                      value={editingFlat.occupancy_from || ''}
+                      onChange={(e) => setEditingFlat({ ...editingFlat, occupancy_from: e.target.value })}
+                      required
+                    />
+                  </div>
+                )}
+
+                {!editingFlat.is_vacant && !editingFlat.is_owner_occupied && (
+                  <div style={{ marginTop: '1rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1.25rem' }}>
+                    <h4 style={{ fontSize: '1rem', color: 'var(--primary)', marginBottom: '1rem', fontWeight: 'bold' }}>Tenant Details</h4>
+                    <div className="grid-split-1-1" style={{ gap: '1rem' }}>
+                      <div className="input-group">
+                        <label htmlFor="tenant-name-input">Tenant Name</label>
+                        <input
+                          id="tenant-name-input"
+                          type="text"
+                          className="input-field"
+                          style={{ padding: '0.6rem' }}
+                          value={editingFlat.tenant_name || ''}
+                          onChange={(e) => setEditingFlat({ ...editingFlat, tenant_name: e.target.value })}
+                          required
+                          placeholder="Tenant full name"
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label htmlFor="tenant-password-input">Tenant Password</label>
+                        <input
+                          id="tenant-password-input"
+                          type="text"
+                          className="input-field"
+                          style={{ padding: '0.6rem' }}
+                          value={editingFlat.tenant_password || ''}
+                          onChange={(e) => setEditingFlat({ ...editingFlat, tenant_password: e.target.value })}
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="grid-split-1-1" style={{ gap: '1rem', marginTop: '1rem' }}>
+                      <div className="input-group">
+                        <label htmlFor="tenant-phone-input">Tenant Phone</label>
+                        <input
+                          id="tenant-phone-input"
+                          type="text"
+                          className="input-field"
+                          style={{ padding: '0.6rem' }}
+                          value={editingFlat.tenant_phone || ''}
+                          onChange={(e) => setEditingFlat({ ...editingFlat, tenant_phone: e.target.value })}
+                          required
+                          placeholder="Phone number"
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label htmlFor="tenant-email-input">Tenant Email (Optional)</label>
+                        <input
+                          id="tenant-email-input"
+                          type="email"
+                          className="input-field"
+                          style={{ padding: '0.6rem' }}
+                          value={editingFlat.tenant_email || ''}
+                          onChange={(e) => setEditingFlat({ ...editingFlat, tenant_email: e.target.value })}
+                          placeholder="Email address"
+                        />
+                      </div>
+                    </div>
+                    <div className="input-group" style={{ marginTop: '1rem', marginBottom: 0 }}>
+                      <label htmlFor="occupancy-from-input-tenant">Occupied Since Date</label>
+                      <input
+                        id="occupancy-from-input-tenant"
+                        type="date"
+                        className="input-field"
+                        style={{ padding: '0.6rem' }}
+                        value={editingFlat.occupancy_from || ''}
+                        onChange={(e) => setEditingFlat({ ...editingFlat, occupancy_from: e.target.value })}
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="glass-panel" style={{ padding: '1.5rem' }}>
+                {(() => {
+                  const displayHistory = [];
+                  if (!editingFlat.is_vacant && !editingFlat.is_owner_occupied && editingFlat.tenant_name) {
+                    displayHistory.push({
+                      id: 'current-tenant',
+                      tenant_name: editingFlat.tenant_name,
+                      tenant_phone: editingFlat.tenant_phone,
+                      tenant_email: editingFlat.tenant_email,
+                      occupied_from: editingFlat.occupancy_from,
+                      occupied_to: 'Present'
+                    });
+                  }
+                  const allHistory = [...displayHistory, ...flatTenantHistory];
+                  return (
+                    <div>
+                      <h3 style={{ fontSize: '1.15rem', color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+                        </svg>
+                        Tenant History
+                      </h3>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
+                              <th style={{ padding: '0.6rem 0.4rem' }}>Tenant Name</th>
+                              <th style={{ padding: '0.6rem 0.4rem' }}>Phone</th>
+                              <th style={{ padding: '0.6rem 0.4rem' }}>Occupied Range</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {allHistory.length === 0 ? (
+                              <tr>
+                                <td colSpan="3" style={{ textAlign: 'center', padding: '1.5rem 0', color: 'var(--text-muted)' }}>
+                                  No tenant records.
+                                </td>
+                              </tr>
+                            ) : (
+                              allHistory.map(h => (
+                                <tr key={h.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                                  <td style={{ padding: '0.6rem 0.4rem', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    {h.tenant_name}
+                                    {h.occupied_to === 'Present' && (
+                                      <span className="badge badge-paid" style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: '3px' }}>Current</span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '0.6rem 0.4rem' }}>{h.tenant_phone || '-'}</td>
+                                  <td style={{ padding: '0.6rem 0.4rem', color: 'var(--text-secondary)' }}>
+                                    {h.occupied_from ? new Date(h.occupied_from).toLocaleDateString() : '-'} - {h.occupied_to === 'Present' ? 'Present' : (h.occupied_to ? new Date(h.occupied_to).toLocaleDateString() : '-')}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ minWidth: '120px' }}
+                  onClick={() => setEditingFlat(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ minWidth: '150px' }}
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
         ) : (
           <>
             {/* OVERVIEW TAB */}
@@ -773,7 +1063,8 @@ export default function AdminDashboard({ session, onLogout }) {
                   </div>
                 </div>
 
-                <div className="glass-panel" style={{ padding: '1rem', overflowX: 'auto' }}>
+                {/* Desktop View: Table */}
+                <div className="glass-panel desktop-only" style={{ padding: '1rem', overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '700px' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
@@ -838,6 +1129,72 @@ export default function AdminDashboard({ session, onLogout }) {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Mobile View: Cards */}
+                <div className="mobile-only" style={{ marginTop: '1rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {flats.map(flat => {
+                      const record = maintenanceRecords.find(r => r.flat_no === flat.flat_no);
+                      const paid = record ? record.amount_paid : 0;
+                      const due = record ? record.amount_due : 2000;
+                      const status = record ? record.payment_status : 'Unpaid';
+                      const method = record ? record.payment_method : '-';
+                      const date = record && record.payment_date ? new Date(record.payment_date).toLocaleDateString() : '-';
+                      const occupantName = flat.is_vacant 
+                        ? 'Vacant' 
+                        : (flat.is_owner_occupied 
+                          ? (flat.owner_name ? `Owner: ${flat.owner_name}` : 'Owner') 
+                          : (flat.tenant_name ? `Tenant: ${flat.tenant_name}` : 'Tenant'));
+
+                      return (
+                        <div key={flat.flat_no} className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                          <div className="flex-between">
+                            <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Flat {flat.flat_no}</span>
+                            <span className={`badge ${status === 'Paid' ? 'badge-paid' : status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`}>
+                              {status}
+                            </span>
+                          </div>
+                          
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem 1rem', fontSize: '0.85rem', color: 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '0.75rem' }}>
+                            <div>
+                              <strong style={{ color: 'var(--text-primary)' }}>Occupant:</strong><br/>
+                              {occupantName}
+                            </div>
+                            <div>
+                              <strong style={{ color: 'var(--text-primary)' }}>Amount Paid/Due:</strong><br/>
+                              ₹{paid} / ₹{due}
+                            </div>
+                            <div>
+                              <strong style={{ color: 'var(--text-primary)' }}>Payment Date:</strong><br/>
+                              {date}
+                            </div>
+                            <div>
+                              <strong style={{ color: 'var(--text-primary)' }}>Method:</strong><br/>
+                              {method}
+                            </div>
+                          </div>
+
+                          <button
+                            className="btn btn-secondary"
+                            style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }}
+                            onClick={() => setRecordingPayment({
+                              flat_no: flat.flat_no,
+                              amount_due: due,
+                              amount_paid: paid || due,
+                              payment_status: status === 'Unpaid' ? 'Paid' : status,
+                              payment_date: record && record.payment_date ? record.payment_date.substring(0, 10) : new Date().toISOString().substring(0, 10),
+                              payment_method: record ? record.payment_method : 'UPI',
+                              transaction_id: record ? record.transaction_id : '',
+                              remarks: record ? record.remarks : ''
+                            })}
+                          >
+                            Record Payment
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
             {/* APPROVALS TAB */}
@@ -848,7 +1205,8 @@ export default function AdminDashboard({ session, onLogout }) {
                   <p style={{ color: 'var(--text-secondary)' }}>Review, approve, or reject resident occupancy status changes and reported payments</p>
                 </div>
 
-                <div className="glass-panel" style={{ padding: '1.5rem', overflowX: 'auto' }}>
+                {/* Desktop View: Table */}
+                <div className="glass-panel desktop-only" style={{ padding: '1.5rem', overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
@@ -967,6 +1325,111 @@ export default function AdminDashboard({ session, onLogout }) {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Mobile View: Cards */}
+                <div className="mobile-only" style={{ marginTop: '1rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {approvals.length === 0 ? (
+                      <div className="glass-panel flex-center" style={{ padding: '2rem', color: 'var(--text-muted)' }}>
+                        No approval requests found.
+                      </div>
+                    ) : (
+                      approvals.map(req => {
+                        const date = new Date(req.created_at).toLocaleString();
+                        const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : 'Payment Report';
+                        const statusBadgeClass = req.status === 'Approved' ? 'badge-paid' : req.status === 'Rejected' ? 'badge-unpaid' : 'badge-partial';
+
+                        // Render details preview
+                        let detailsContent = null;
+                        if (req.request_type === 'occupancy_change') {
+                          const details = req.details || {};
+                          const statusStr = details.is_vacant ? 'Vacant' : (details.is_owner_occupied ? 'Owner Occupied' : 'Rented Out');
+                          detailsContent = (
+                            <div style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
+                              <div><strong>Status:</strong> {statusStr}</div>
+                              <div><strong>Owner:</strong> {details.owner_name} ({details.phone_number || 'No Phone'})</div>
+                              {!details.is_vacant && !details.is_owner_occupied && (
+                                <div style={{ borderLeft: '2px solid var(--glass-border)', paddingLeft: '0.5rem', marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
+                                  Tenant: {details.tenant_name} ({details.tenant_phone})<br/>
+                                  Since: {details.occupancy_from}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        } else if (req.request_type === 'payment_report') {
+                          const details = req.details || {};
+                          detailsContent = (
+                            <div style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
+                              <div><strong>Month:</strong> {details.billing_month}</div>
+                              <div><strong>Paid:</strong> <strong>₹{details.amount_paid}</strong> via {details.payment_method}</div>
+                              <div style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: '0.75rem' }}>Txn: {details.transaction_id || 'N/A'}</div>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div key={req.id} className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            <div className="flex-between">
+                              <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Flat {req.flat_no}</span>
+                              <span className={`badge ${statusBadgeClass}`}>{req.status}</span>
+                            </div>
+
+                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                              <div><strong>Date Raised:</strong> {date}</div>
+                              <div><strong>Type:</strong> {typeLabel}</div>
+                              <div><strong>Raised By:</strong> <span style={{ textTransform: 'capitalize' }}>{req.raised_by}</span></div>
+                            </div>
+
+                            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                              {detailsContent}
+                            </div>
+
+                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
+                              {req.status === 'Pending' ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                  <input
+                                    type="text"
+                                    className="input-field"
+                                    placeholder="Admin comments/feedback..."
+                                    style={{ padding: '0.4rem', fontSize: '0.8rem', width: '100%' }}
+                                    id={`comment-mobile-${req.id}`}
+                                  />
+                                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                    <button
+                                      className="btn btn-primary"
+                                      style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', flex: 1 }}
+                                      onClick={() => {
+                                        const commentVal = document.getElementById(`comment-mobile-${req.id}`)?.value || '';
+                                        handleAcceptRequest(req, commentVal);
+                                      }}
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      className="btn btn-danger"
+                                      style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', flex: 1 }}
+                                      onClick={() => {
+                                        const commentVal = document.getElementById(`comment-mobile-${req.id}`)?.value || '';
+                                        handleRejectRequest(req.id, commentVal);
+                                      }}
+                                    >
+                                      Reject
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                  <strong>Admin Comments:</strong><br/>
+                                  {req.admin_comments || 'No comments left.'}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1074,272 +1537,6 @@ export default function AdminDashboard({ session, onLogout }) {
           </>
         )}
       </main>
-
-      {/* EDIT FLAT MODAL */}
-      {editingFlat && (
-        <div className="modal-overlay">
-          <div className="modal-content glass-panel glow-primary" style={{ maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <h2 style={{ marginBottom: '1.5rem' }}>Edit Details - Flat {editingFlat.flat_no}</h2>
-            <form onSubmit={handleUpdateFlat}>
-              <h4 style={{ color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.25rem', marginBottom: '1rem' }}>Owner Info</h4>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div className="input-group">
-                  <label htmlFor="owner-name-input">Owner Name</label>
-                  <input
-                    id="owner-name-input"
-                    type="text"
-                    className="input-field"
-                    style={{ padding: '0.5rem' }}
-                    value={editingFlat.owner_name || ''}
-                    onChange={(e) => setEditingFlat({ ...editingFlat, owner_name: e.target.value })}
-                  />
-                </div>
-
-                <div className="input-group">
-                  <label htmlFor="phone-input">Owner Phone</label>
-                  <input
-                    id="phone-input"
-                    type="text"
-                    className="input-field"
-                    style={{ padding: '0.5rem' }}
-                    value={editingFlat.phone_number || ''}
-                    onChange={(e) => setEditingFlat({ ...editingFlat, phone_number: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div className="input-group">
-                  <label htmlFor="email-input">Owner Email</label>
-                  <input
-                    id="email-input"
-                    type="email"
-                    className="input-field"
-                    style={{ padding: '0.5rem' }}
-                    value={editingFlat.email || ''}
-                    onChange={(e) => setEditingFlat({ ...editingFlat, email: e.target.value })}
-                  />
-                </div>
-
-                <div className="input-group">
-                  <label htmlFor="owner-password-input">Owner Password</label>
-                  <input
-                    id="owner-password-input"
-                    type="text"
-                    className="input-field"
-                    style={{ padding: '0.5rem' }}
-                    value={editingFlat.owner_password || ''}
-                    onChange={(e) => setEditingFlat({ ...editingFlat, owner_password: e.target.value })}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="input-group" style={{ marginBottom: '1.25rem' }}>
-                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.5rem' }}>Occupancy Status</label>
-                <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="admin_occupancy_status"
-                      checked={editingFlat.is_vacant === true}
-                      onChange={() => setEditingFlat({ ...editingFlat, is_vacant: true, is_owner_occupied: true })}
-                      style={{ accentColor: 'var(--primary)', width: '16px', height: '16px' }}
-                    />
-                    Vacant
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="admin_occupancy_status"
-                      checked={editingFlat.is_vacant === false && editingFlat.is_owner_occupied === true}
-                      onChange={() => setEditingFlat({ ...editingFlat, is_vacant: false, is_owner_occupied: true })}
-                      style={{ accentColor: 'var(--primary)', width: '16px', height: '16px' }}
-                    />
-                    Occupied by Owner
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="admin_occupancy_status"
-                      checked={editingFlat.is_vacant === false && editingFlat.is_owner_occupied === false}
-                      onChange={() => setEditingFlat({ ...editingFlat, is_vacant: false, is_owner_occupied: false })}
-                      style={{ accentColor: 'var(--primary)', width: '16px', height: '16px' }}
-                    />
-                    Rented out to Tenant
-                  </label>
-                </div>
-              </div>
-
-              {/* Occupied Date (Owner) */}
-              {!editingFlat.is_vacant && editingFlat.is_owner_occupied && (
-                <div className="input-group" style={{ marginBottom: '1rem' }}>
-                  <label htmlFor="occupancy-from-input">Occupied Since Date</label>
-                  <input
-                    id="occupancy-from-input"
-                    type="date"
-                    className="input-field"
-                    style={{ padding: '0.5rem' }}
-                    value={editingFlat.occupancy_from || ''}
-                    onChange={(e) => setEditingFlat({ ...editingFlat, occupancy_from: e.target.value })}
-                    required
-                  />
-                </div>
-              )}
-
-              {/* Rented Out Tenant details */}
-              {!editingFlat.is_vacant && !editingFlat.is_owner_occupied && (
-                <fieldset style={{ border: '1px solid var(--glass-border)', padding: '1rem', borderRadius: '8px', marginBottom: '1.25rem', background: 'rgba(255,255,255,0.01)' }}>
-                  <legend style={{ fontSize: '0.75rem', color: 'var(--primary)', padding: '0 0.5rem', fontWeight: 'bold' }}>Tenant Info</legend>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                    <div className="input-group" style={{ marginBottom: '0.5rem' }}>
-                      <label htmlFor="tenant-name-input">Tenant Name</label>
-                      <input
-                        id="tenant-name-input"
-                        type="text"
-                        className="input-field"
-                        style={{ padding: '0.5rem' }}
-                        value={editingFlat.tenant_name || ''}
-                        onChange={(e) => setEditingFlat({ ...editingFlat, tenant_name: e.target.value })}
-                        required
-                        placeholder="Tenant full name"
-                      />
-                    </div>
-
-                    <div className="input-group" style={{ marginBottom: '0.5rem' }}>
-                      <label htmlFor="tenant-password-input">Tenant Password</label>
-                      <input
-                        id="tenant-password-input"
-                        type="text"
-                        className="input-field"
-                        style={{ padding: '0.5rem' }}
-                        value={editingFlat.tenant_password || ''}
-                        onChange={(e) => setEditingFlat({ ...editingFlat, tenant_password: e.target.value })}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                    <div className="input-group" style={{ marginBottom: 0 }}>
-                      <label htmlFor="tenant-phone-input">Tenant Phone</label>
-                      <input
-                        id="tenant-phone-input"
-                        type="text"
-                        className="input-field"
-                        style={{ padding: '0.5rem' }}
-                        value={editingFlat.tenant_phone || ''}
-                        onChange={(e) => setEditingFlat({ ...editingFlat, tenant_phone: e.target.value })}
-                        required
-                        placeholder="Phone number"
-                      />
-                    </div>
-
-                    <div className="input-group" style={{ marginBottom: 0 }}>
-                      <label htmlFor="tenant-email-input">Tenant Email (Optional)</label>
-                      <input
-                        id="tenant-email-input"
-                        type="email"
-                        className="input-field"
-                        style={{ padding: '0.5rem' }}
-                        value={editingFlat.tenant_email || ''}
-                        onChange={(e) => setEditingFlat({ ...editingFlat, tenant_email: e.target.value })}
-                        placeholder="Email address"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="input-group" style={{ marginBottom: 0, marginTop: '0.75rem' }}>
-                    <label htmlFor="occupancy-from-input-tenant">Occupied Since Date</label>
-                    <input
-                      id="occupancy-from-input-tenant"
-                      type="date"
-                      className="input-field"
-                      style={{ padding: '0.5rem' }}
-                      value={editingFlat.occupancy_from || ''}
-                      onChange={(e) => setEditingFlat({ ...editingFlat, occupancy_from: e.target.value })}
-                      required
-                    />
-                  </div>
-                </fieldset>
-              )}
-
-              {/* Past Tenant History */}
-              {(() => {
-                const displayHistory = [];
-                if (!editingFlat.is_vacant && !editingFlat.is_owner_occupied && editingFlat.tenant_name) {
-                  displayHistory.push({
-                    id: 'current-tenant',
-                    tenant_name: editingFlat.tenant_name,
-                    tenant_phone: editingFlat.tenant_phone,
-                    tenant_email: editingFlat.tenant_email,
-                    occupied_from: editingFlat.occupancy_from,
-                    occupied_to: 'Present'
-                  });
-                }
-                const allHistory = [...displayHistory, ...flatTenantHistory];
-
-                return (
-                  <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1rem' }}>
-                    <h4 style={{ color: 'var(--primary)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.95rem' }}>
-                      <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
-                      </svg>
-                      Tenant History
-                    </h4>
-                    <div style={{ maxHeight: '180px', overflowY: 'auto', background: 'rgba(0,0,0,0.1)', borderRadius: '6px', padding: '0.5rem', border: '1px solid var(--glass-border)' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8rem' }}>
-                        <thead>
-                          <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
-                            <th style={{ padding: '0.5rem 0.25rem' }}>Tenant Name</th>
-                            <th style={{ padding: '0.5rem 0.25rem' }}>Phone</th>
-                            <th style={{ padding: '0.5rem 0.25rem' }}>Occupied Range</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {allHistory.length === 0 ? (
-                            <tr>
-                              <td colSpan="3" style={{ textAlign: 'center', padding: '1rem 0', color: 'var(--text-muted)' }}>
-                                No tenant records.
-                              </td>
-                            </tr>
-                          ) : (
-                            allHistory.map(h => (
-                              <tr key={h.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
-                                <td style={{ padding: '0.5rem 0.25rem', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                                  {h.tenant_name}
-                                  {h.occupied_to === 'Present' && (
-                                    <span className="badge badge-paid" style={{ fontSize: '0.55rem', padding: '0px 4px', borderRadius: '3px' }}>Current</span>
-                                  )}
-                                </td>
-                                <td style={{ padding: '0.5rem 0.25rem' }}>{h.tenant_phone || '-'}</td>
-                                <td style={{ padding: '0.5rem 0.25rem', color: 'var(--text-secondary)' }}>
-                                  {h.occupied_from ? new Date(h.occupied_from).toLocaleDateString() : '-'} - {h.occupied_to === 'Present' ? 'Present' : (h.occupied_to ? new Date(h.occupied_to).toLocaleDateString() : '-')}
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div className="flex-center gap-2" style={{ marginTop: '1.5rem' }}>
-                <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setEditingFlat(null)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* RECORD PAYMENT MODAL */}
       {recordingPayment && (
