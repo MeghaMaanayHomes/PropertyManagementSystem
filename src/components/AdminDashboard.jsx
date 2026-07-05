@@ -41,7 +41,7 @@ export default function AdminDashboard({ session, onLogout }) {
 
   useEffect(() => {
     fetchData();
-  }, [selectedMonth]);
+  }, [selectedMonth, activeTab]);
 
   useEffect(() => {
     if (editingFlat?.flat_no) {

@@ -75,7 +75,7 @@ export default function ResidentDashboard({ session, onLogout }) {
 
   useEffect(() => {
     fetchResidentData();
-  }, []);
+  }, [activeTab]);
 
   const fetchResidentData = async () => {
     setLoading(true);
@@ -1179,51 +1179,83 @@ export default function ResidentDashboard({ session, onLogout }) {
 
                 <div className="grid-split-2-1">
                   {/* Payment History */}
-                  <div className="glass-panel" style={{ padding: '1.25rem', overflowX: 'auto' }}>
+                  <div className="glass-panel" style={{ padding: '1.25rem' }}>
                     <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Payment History</h3>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '500px' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                          <th style={{ padding: '1rem 0.75rem' }}>Billing Month</th>
-                          <th style={{ padding: '1rem 0.75rem' }}>Status</th>
-                          <th style={{ padding: '1rem 0.75rem' }}>Amount Due</th>
-                          <th style={{ padding: '1rem 0.75rem' }}>Amount Paid</th>
-                          <th style={{ padding: '1rem 0.75rem' }}>Payment Date</th>
-                          <th style={{ padding: '1rem 0.75rem' }}>Method</th>
-                          <th style={{ padding: '1rem 0.75rem' }}>Transaction ID</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {payments.length === 0 ? (
-                          <tr>
-                            <td colSpan="7" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                              No payment records found.
-                            </td>
-                          </tr>
-                        ) : (
-                          payments.map(record => {
-                            const date = record.payment_date ? new Date(record.payment_date).toLocaleDateString() : '-';
-                            return (
-                              <tr key={record.billing_month} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
-                                <td style={{ padding: '1rem 0.75rem', fontWeight: 'bold' }}>{formatMonthName(record.billing_month)}</td>
-                                <td style={{ padding: '1rem 0.75rem' }}>
-                                  <span className={`badge ${record.payment_status === 'Paid' ? 'badge-paid' : record.payment_status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`}>
-                                    {record.payment_status}
-                                  </span>
-                                </td>
-                                <td style={{ padding: '1rem 0.75rem' }}>₹{record.amount_due}</td>
-                                <td style={{ padding: '1rem 0.75rem', color: 'var(--success)' }}>₹{record.amount_paid}</td>
-                                <td style={{ padding: '1rem 0.75rem' }}>{date}</td>
-                                <td style={{ padding: '1rem 0.75rem' }}>{record.payment_method || '-'}</td>
-                                <td style={{ padding: '1rem 0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                                  {record.transaction_id || '-'}
-                                </td>
+
+                    {payments.length === 0 ? (
+                      <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem 0' }}>No payment records found.</p>
+                    ) : (
+                      <>
+                        {/* Desktop table */}
+                        <div className="desktop-only" style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '520px' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                                <th style={{ padding: '0.75rem' }}>Month</th>
+                                <th style={{ padding: '0.75rem' }}>Status</th>
+                                <th style={{ padding: '0.75rem' }}>Due</th>
+                                <th style={{ padding: '0.75rem' }}>Paid</th>
+                                <th style={{ padding: '0.75rem' }}>Date</th>
+                                <th style={{ padding: '0.75rem' }}>Method</th>
+                                <th style={{ padding: '0.75rem' }}>Txn ID</th>
                               </tr>
+                            </thead>
+                            <tbody>
+                              {payments.map(record => {
+                                const date = record.payment_date ? new Date(record.payment_date).toLocaleDateString() : '-';
+                                return (
+                                  <tr key={record.billing_month} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
+                                    <td style={{ padding: '0.75rem', fontWeight: 'bold' }}>{formatMonthName(record.billing_month)}</td>
+                                    <td style={{ padding: '0.75rem' }}>
+                                      <span className={`badge ${record.payment_status === 'Paid' ? 'badge-paid' : record.payment_status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`}>
+                                        {record.payment_status}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: '0.75rem' }}>&#8377;{record.amount_due}</td>
+                                    <td style={{ padding: '0.75rem', color: 'var(--success)' }}>&#8377;{record.amount_paid}</td>
+                                    <td style={{ padding: '0.75rem' }}>{date}</td>
+                                    <td style={{ padding: '0.75rem' }}>{record.payment_method || '-'}</td>
+                                    <td style={{ padding: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '0.8rem' }}>{record.transaction_id || '-'}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Mobile cards */}
+                        <div className="mobile-only" style={{ display: 'none', flexDirection: 'column', gap: '0.75rem' }}>
+                          {payments.map(record => {
+                            const date = record.payment_date ? new Date(record.payment_date).toLocaleDateString() : '-';
+                            const statusClass = record.payment_status === 'Paid' ? 'badge-paid' : record.payment_status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid';
+                            return (
+                              <div key={record.billing_month} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '1rem', border: '1px solid var(--glass-border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                                  <span style={{ fontWeight: 'bold', fontSize: '1rem' }}>{formatMonthName(record.billing_month)}</span>
+                                  <span className={`badge ${statusClass}`}>{record.payment_status}</span>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', fontSize: '0.85rem' }}>
+                                  <div style={{ color: 'var(--text-secondary)' }}>Amount Due</div>
+                                  <div style={{ fontWeight: '600' }}>&#8377;{record.amount_due}</div>
+                                  <div style={{ color: 'var(--text-secondary)' }}>Amount Paid</div>
+                                  <div style={{ color: 'var(--success)', fontWeight: '600' }}>&#8377;{record.amount_paid}</div>
+                                  <div style={{ color: 'var(--text-secondary)' }}>Payment Date</div>
+                                  <div>{date}</div>
+                                  <div style={{ color: 'var(--text-secondary)' }}>Method</div>
+                                  <div>{record.payment_method || '-'}</div>
+                                  {record.transaction_id && (
+                                    <>
+                                      <div style={{ color: 'var(--text-secondary)' }}>Txn ID</div>
+                                      <div style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-secondary)', wordBreak: 'break-all' }}>{record.transaction_id}</div>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
                             );
-                          })
-                        )}
-                      </tbody>
-                    </table>
+                          })}
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {/* Report Payment Form */}
@@ -1641,67 +1673,116 @@ export default function ResidentDashboard({ session, onLogout }) {
                   <p style={{ color: 'var(--text-secondary)' }}>Track the status of your flat update requests and reported payments</p>
                 </div>
 
-                <div className="glass-panel" style={{ padding: '1.5rem', overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                        <th style={{ padding: '1rem 0.75rem' }}>Date Raised</th>
-                        <th style={{ padding: '1rem 0.75rem' }}>Request Type</th>
-                        <th style={{ padding: '1rem 0.75rem' }}>Raised By</th>
-                        <th style={{ padding: '1rem 0.75rem' }}>Status</th>
-                        <th style={{ padding: '1rem 0.75rem' }}>Details</th>
-                        <th style={{ padding: '1rem 0.75rem' }}>Admin Comments</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {approvals.length === 0 ? (
-                        <tr>
-                          <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                            No approval requests submitted yet.
-                          </td>
-                        </tr>
-                      ) : (
-                        approvals.map(req => {
+                <div className="glass-panel" style={{ padding: '1.5rem' }}>
+                  {approvals.length === 0 ? (
+                    <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem 0' }}>No approval requests submitted yet.</p>
+                  ) : (
+                    <>
+                      {/* Desktop table */}
+                      <div className="desktop-only" style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                              <th style={{ padding: '0.75rem' }}>Date Raised</th>
+                              <th style={{ padding: '0.75rem' }}>Request Type</th>
+                              <th style={{ padding: '0.75rem' }}>Raised By</th>
+                              <th style={{ padding: '0.75rem' }}>Status</th>
+                              <th style={{ padding: '0.75rem' }}>Details</th>
+                              <th style={{ padding: '0.75rem' }}>Admin Comments</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {approvals.map(req => {
+                              const date = new Date(req.created_at).toLocaleString();
+                              const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : 'Payment Report';
+                              const statusBadgeClass = req.status === 'Approved' ? 'badge-paid' : req.status === 'Rejected' ? 'badge-unpaid' : 'badge-partial';
+                              let detailsStr = '';
+                              if (req.request_type === 'occupancy_change') {
+                                const d = req.details || {};
+                                detailsStr = `Status: ${d.is_vacant ? 'Vacant' : (d.is_owner_occupied ? 'Owner Occupied' : 'Rented Out')} | Owner: ${d.owner_name || 'N/A'}${d.tenant_name ? `, Tenant: ${d.tenant_name}` : ''}`;
+                              } else if (req.request_type === 'ownership_transfer') {
+                                const d = req.details || {};
+                                detailsStr = `New Owner: ${d.new_owner_name || 'N/A'} (Phone: ${d.new_owner_phone || 'N/A'})`;
+                              } else if (req.request_type === 'payment_report') {
+                                const d = req.details || {};
+                                detailsStr = `Month: ${d.billing_month} | Paid: ₹${d.amount_paid} via ${d.payment_method}`;
+                              }
+                              return (
+                                <tr key={req.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
+                                  <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{date}</td>
+                                  <td style={{ padding: '0.75rem', fontWeight: 'bold' }}>{typeLabel}</td>
+                                  <td style={{ padding: '0.75rem', textTransform: 'capitalize' }}>{req.raised_by}</td>
+                                  <td style={{ padding: '0.75rem' }}><span className={`badge ${statusBadgeClass}`}>{req.status}</span></td>
+                                  <td style={{ padding: '0.75rem', color: 'var(--text-secondary)', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{detailsStr}</td>
+                                  <td style={{ padding: '0.75rem', color: req.status === 'Rejected' ? 'var(--accent)' : 'var(--text-secondary)' }}>{req.admin_comments || '-'}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Mobile cards */}
+                      <div className="mobile-only" style={{ display: 'none', flexDirection: 'column', gap: '0.85rem' }}>
+                        {approvals.map(req => {
                           const date = new Date(req.created_at).toLocaleString();
                           const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : 'Payment Report';
                           const statusBadgeClass = req.status === 'Approved' ? 'badge-paid' : req.status === 'Rejected' ? 'badge-unpaid' : 'badge-partial';
-                          
-                          // Render nice details preview
-                          let detailsStr = '';
+                          let detailLines = [];
                           if (req.request_type === 'occupancy_change') {
-                            const details = req.details || {};
-                            const statusStr = details.is_vacant ? 'Vacant' : (details.is_owner_occupied ? 'Owner Occupied' : 'Rented Out');
-                            detailsStr = `Status: ${statusStr} | Owner: ${details.owner_name || 'N/A'}${details.tenant_name ? `, Tenant: ${details.tenant_name}` : ''}`;
+                            const d = req.details || {};
+                            const occStatus = d.is_vacant ? 'Vacant' : (d.is_owner_occupied ? 'Owner Occupied' : 'Rented Out');
+                            detailLines = [
+                              ['Occupancy', occStatus],
+                              ['Owner', d.owner_name || 'N/A'],
+                              ...(d.tenant_name ? [['Tenant', d.tenant_name]] : [])
+                            ];
                           } else if (req.request_type === 'ownership_transfer') {
-                            const details = req.details || {};
-                            detailsStr = `New Owner: ${details.new_owner_name || 'N/A'} (Phone: ${details.new_owner_phone || 'N/A'}, Email: ${details.new_owner_email || 'N/A'})`;
+                            const d = req.details || {};
+                            detailLines = [
+                              ['New Owner', d.new_owner_name || 'N/A'],
+                              ['Phone', d.new_owner_phone || 'N/A'],
+                              ...(d.new_owner_email ? [['Email', d.new_owner_email]] : [])
+                            ];
                           } else if (req.request_type === 'payment_report') {
-                            const details = req.details || {};
-                            detailsStr = `Month: ${details.billing_month} | Paid: ₹${details.amount_paid} via ${details.payment_method}`;
+                            const d = req.details || {};
+                            detailLines = [
+                              ['Month', d.billing_month],
+                              ['Paid', `₹${d.amount_paid}`],
+                              ['Method', d.payment_method]
+                            ];
                           }
-
                           return (
-                            <tr key={req.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
-                              <td style={{ padding: '1rem 0.75rem', color: 'var(--text-secondary)' }}>{date}</td>
-                              <td style={{ padding: '1rem 0.75rem', fontWeight: 'bold' }}>{typeLabel}</td>
-                              <td style={{ padding: '1rem 0.75rem', textTransform: 'capitalize' }}>{req.raised_by}</td>
-                              <td style={{ padding: '1rem 0.75rem' }}>
-                                <span className={`badge ${statusBadgeClass}`}>
-                                  {req.status}
-                                </span>
-                              </td>
-                              <td style={{ padding: '1rem 0.75rem', color: 'var(--text-secondary)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {detailsStr}
-                              </td>
-                              <td style={{ padding: '1rem 0.75rem', color: req.status === 'Rejected' ? 'var(--accent)' : 'var(--text-secondary)' }}>
-                                {req.admin_comments || '-'}
-                              </td>
-                            </tr>
+                            <div key={req.id} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '1rem', border: '1px solid var(--glass-border)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.6rem', gap: '0.5rem' }}>
+                                <div>
+                                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', marginBottom: '0.2rem' }}>{typeLabel}</div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{date}</div>
+                                </div>
+                                <span className={`badge ${statusBadgeClass}`} style={{ flexShrink: 0 }}>{req.status}</span>
+                              </div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem', fontSize: '0.83rem', marginTop: '0.5rem' }}>
+                                <div style={{ color: 'var(--text-secondary)' }}>Raised By</div>
+                                <div style={{ textTransform: 'capitalize' }}>{req.raised_by}</div>
+                                {detailLines.map(([label, val]) => (
+                                  <>
+                                    <div key={label + '-l'} style={{ color: 'var(--text-secondary)' }}>{label}</div>
+                                    <div key={label + '-v'}>{val}</div>
+                                  </>
+                                ))}
+                                {req.admin_comments && (
+                                  <>
+                                    <div style={{ color: 'var(--text-secondary)' }}>Admin Note</div>
+                                    <div style={{ color: req.status === 'Rejected' ? 'var(--accent)' : 'inherit' }}>{req.admin_comments}</div>
+                                  </>
+                                )}
+                              </div>
+                            </div>
                           );
-                        })
-                      )}
-                    </tbody>
-                  </table>
+                        })}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
