@@ -613,12 +613,12 @@ export default function ResidentDashboard({ session, onLogout }) {
                 <div className="grid-split-1-1">
                   {/* Flat Details Panel */}
                   <div className="glass-panel" style={{ padding: '1.5rem' }}>
-                    <div className="flex-between" style={{ marginBottom: '1.25rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
+                    <div style={{ marginBottom: '1.25rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem' }}>
                       <h3 style={{ fontSize: '1.1rem', color: 'var(--primary)', margin: 0 }}>
                         Flat Information
                       </h3>
                       {session.role === 'owner' && !isEditingInfo && !isTransferringOwnership && (
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                           <button
                             className="btn btn-secondary"
                             style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem' }}
@@ -660,7 +660,7 @@ export default function ResidentDashboard({ session, onLogout }) {
 
                     {isEditingInfo ? (
                       <form onSubmit={handleSaveFlatInfo}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
                           <div className="input-group" style={{ marginBottom: '0.5rem' }}>
                             <label style={{ fontSize: '0.8rem' }}>Owner Name</label>
                             <input
@@ -763,7 +763,7 @@ export default function ResidentDashboard({ session, onLogout }) {
                               />
                             </div>
                             
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
                               <div className="input-group" style={{ marginBottom: 0 }}>
                                 <label style={{ fontSize: '0.8rem' }}>Tenant Phone</label>
                                 <input
@@ -803,11 +803,11 @@ export default function ResidentDashboard({ session, onLogout }) {
                           </fieldset>
                         )}
 
-                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
-                          <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }} onClick={() => setIsEditingInfo(false)}>
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1.5rem', flexWrap: 'wrap' }}>
+                          <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', flex: '1 1 auto' }} onClick={() => setIsEditingInfo(false)}>
                             Cancel
                           </button>
-                          <button type="submit" className="btn btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }}>
+                          <button type="submit" className="btn btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', flex: '1 1 auto' }}>
                             Save Details
                           </button>
                         </div>
@@ -818,7 +818,7 @@ export default function ResidentDashboard({ session, onLogout }) {
                           Provide details of the buyer/new owner. Once approved by the admin, ownership will be transferred, the flat occupancy will be reset to vacant, and your access credentials will be replaced.
                         </p>
 
-                        <div className="grid-split-1-1" style={{ gap: '0.75rem', marginBottom: '1rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
                           <div className="input-group" style={{ marginBottom: '0.5rem' }}>
                             <label htmlFor="new-owner-name" style={{ fontSize: '0.85rem' }}>New Owner Name</label>
                             <input
@@ -847,7 +847,7 @@ export default function ResidentDashboard({ session, onLogout }) {
                           </div>
                         </div>
 
-                        <div className="grid-split-1-1" style={{ gap: '0.75rem', marginBottom: '1.25rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
                           <div className="input-group" style={{ marginBottom: '0.5rem' }}>
                             <label htmlFor="new-owner-email" style={{ fontSize: '0.85rem' }}>New Owner Email (Optional)</label>
                             <input
@@ -875,24 +875,24 @@ export default function ResidentDashboard({ session, onLogout }) {
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
-                          <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }} onClick={() => setIsTransferringOwnership(false)}>
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1.5rem', flexWrap: 'wrap' }}>
+                          <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', flex: '1 1 auto' }} onClick={() => setIsTransferringOwnership(false)}>
                             Cancel
                           </button>
-                          <button type="submit" className="btn btn-danger" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }}>
+                          <button type="submit" className="btn btn-danger" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', flex: '1 1 auto' }}>
                             Submit Transfer
                           </button>
                         </div>
                       </form>
                     ) : (
-                      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '1rem', fontSize: '0.95rem' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>Owner Name:</span>
-                        <span style={{ fontWeight: '500' }}>{flatDetails.owner_name || 'Not updated'}</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.5rem 1rem', fontSize: '0.95rem', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Owner Name:</span>
+                        <span style={{ fontWeight: '500', wordBreak: 'break-word' }}>{flatDetails.owner_name || 'Not updated'}</span>
 
-                        <span style={{ color: 'var(--text-secondary)' }}>Owner Contact:</span>
-                        <span>{flatDetails.phone_number || flatDetails.email ? `${flatDetails.phone_number || ''} ${flatDetails.email ? `(${flatDetails.email})` : ''}`.trim() : 'Not updated'}</span>
+                        <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Owner Contact:</span>
+                        <span style={{ wordBreak: 'break-word' }}>{flatDetails.phone_number || flatDetails.email ? `${flatDetails.phone_number || ''} ${flatDetails.email ? `(${flatDetails.email})` : ''}`.trim() : 'Not updated'}</span>
 
-                        <span style={{ color: 'var(--text-secondary)' }}>Status:</span>
+                        <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Status:</span>
                         <div>
                           <span className={`badge ${flatDetails.is_vacant ? 'badge-vacant' : 'badge-occupied'}`}>
                             {flatDetails.is_vacant 
@@ -903,26 +903,26 @@ export default function ResidentDashboard({ session, onLogout }) {
 
                         {!flatDetails.is_vacant && flatDetails.is_owner_occupied && (
                           <>
-                            <span style={{ color: 'var(--text-secondary)' }}>Occupied Since:</span>
+                            <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Occupied Since:</span>
                             <span>{flatDetails.occupancy_from ? new Date(flatDetails.occupancy_from).toLocaleDateString() : 'Not set'}</span>
                           </>
                         )}
 
                         {!flatDetails.is_vacant && !flatDetails.is_owner_occupied && (
                           <>
-                            <span style={{ color: 'var(--text-secondary)' }}>Occupied Since:</span>
+                            <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Occupied Since:</span>
                             <span>{flatDetails.occupancy_from ? new Date(flatDetails.occupancy_from).toLocaleDateString() : 'Not set'}</span>
 
-                            <span style={{ color: 'var(--text-secondary)' }}>Tenant Name:</span>
-                            <span style={{ fontWeight: '500' }}>{flatDetails.tenant_name || 'Not updated'}</span>
+                            <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Tenant Name:</span>
+                            <span style={{ fontWeight: '500', wordBreak: 'break-word' }}>{flatDetails.tenant_name || 'Not updated'}</span>
 
-                            <span style={{ color: 'var(--text-secondary)' }}>Tenant Phone:</span>
+                            <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Tenant Phone:</span>
                             <span>{flatDetails.tenant_phone || 'Not updated'}</span>
 
                             {flatDetails.tenant_email && (
                               <>
-                                <span style={{ color: 'var(--text-secondary)' }}>Tenant Email:</span>
-                                <span>{flatDetails.tenant_email}</span>
+                                <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Tenant Email:</span>
+                                <span style={{ wordBreak: 'break-all' }}>{flatDetails.tenant_email}</span>
                               </>
                             )}
                           </>
@@ -988,49 +988,67 @@ export default function ResidentDashboard({ session, onLogout }) {
                         </svg>
                         Tenant History
                       </h3>
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
-                          <thead>
-                            <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                              <th style={{ padding: '0.75rem 0.5rem' }}>Tenant Name</th>
-                              <th style={{ padding: '0.75rem 0.5rem' }}>Phone Number</th>
-                              <th style={{ padding: '0.75rem 0.5rem' }}>Email</th>
-                              <th style={{ padding: '0.75rem 0.5rem' }}>Occupied From</th>
-                              <th style={{ padding: '0.75rem 0.5rem' }}>Occupied To</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {allHistory.length === 0 ? (
-                              <tr>
-                                <td colSpan="5" style={{ textAlign: 'center', padding: '2rem 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                                  No tenant records found for this flat.
-                                </td>
-                              </tr>
-                            ) : (
-                              allHistory.map(history => (
-                                <tr key={history.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
-                                  <td style={{ padding: '0.75rem 0.5rem', fontWeight: '600', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    {history.tenant_name}
-                                    {history.occupied_to === 'Present' && (
-                                      <span className="badge badge-paid" style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px' }}>Current</span>
-                                    )}
-                                  </td>
-                                  <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{history.tenant_phone || '-'}</td>
-                                  <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{history.tenant_email || '-'}</td>
-                                  <td style={{ padding: '0.75rem 0.5rem' }}>{history.occupied_from ? new Date(history.occupied_from).toLocaleDateString() : '-'}</td>
-                                  <td style={{ padding: '0.75rem 0.5rem' }}>
-                                    {history.occupied_to === 'Present' ? (
-                                      <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>Present</span>
-                                    ) : (
-                                      history.occupied_to ? new Date(history.occupied_to).toLocaleDateString() : '-'
-                                    )}
-                                  </td>
+
+                      {allHistory.length === 0 ? (
+                        <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '1.5rem 0', fontSize: '0.9rem' }}>No tenant records found for this flat.</p>
+                      ) : (
+                        <>
+                          {/* Desktop table */}
+                          <div className="desktop-only" style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                              <thead>
+                                <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                                  <th style={{ padding: '0.75rem 0.5rem' }}>Tenant Name</th>
+                                  <th style={{ padding: '0.75rem 0.5rem' }}>Phone Number</th>
+                                  <th style={{ padding: '0.75rem 0.5rem' }}>Email</th>
+                                  <th style={{ padding: '0.75rem 0.5rem' }}>Occupied From</th>
+                                  <th style={{ padding: '0.75rem 0.5rem' }}>Occupied To</th>
                                 </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
+                              </thead>
+                              <tbody>
+                                {allHistory.map(history => (
+                                  <tr key={history.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
+                                    <td style={{ padding: '0.75rem 0.5rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                      {history.tenant_name}
+                                      {history.occupied_to === 'Present' && <span className="badge badge-paid" style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px' }}>Current</span>}
+                                    </td>
+                                    <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{history.tenant_phone || '-'}</td>
+                                    <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{history.tenant_email || '-'}</td>
+                                    <td style={{ padding: '0.75rem 0.5rem' }}>{history.occupied_from ? new Date(history.occupied_from).toLocaleDateString() : '-'}</td>
+                                    <td style={{ padding: '0.75rem 0.5rem' }}>
+                                      {history.occupied_to === 'Present' ? <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>Present</span> : (history.occupied_to ? new Date(history.occupied_to).toLocaleDateString() : '-')}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* Mobile cards */}
+                          <div className="mobile-only" style={{ display: 'none', flexDirection: 'column', gap: '0.75rem' }}>
+                            {allHistory.map(history => (
+                              <div key={history.id} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '0.9rem', border: '1px solid var(--glass-border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                  <span style={{ fontWeight: '700', fontSize: '0.95rem' }}>{history.tenant_name}</span>
+                                  {history.occupied_to === 'Present' && <span className="badge badge-paid" style={{ fontSize: '0.65rem', padding: '2px 7px' }}>Current</span>}
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem', fontSize: '0.83rem' }}>
+                                  <div style={{ color: 'var(--text-secondary)' }}>Phone</div>
+                                  <div>{history.tenant_phone || '-'}</div>
+                                  <div style={{ color: 'var(--text-secondary)' }}>Email</div>
+                                  <div style={{ wordBreak: 'break-all' }}>{history.tenant_email || '-'}</div>
+                                  <div style={{ color: 'var(--text-secondary)' }}>From</div>
+                                  <div>{history.occupied_from ? new Date(history.occupied_from).toLocaleDateString() : '-'}</div>
+                                  <div style={{ color: 'var(--text-secondary)' }}>To</div>
+                                  <div>
+                                    {history.occupied_to === 'Present' ? <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>Present</span> : (history.occupied_to ? new Date(history.occupied_to).toLocaleDateString() : '-')}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })()}
@@ -1057,47 +1075,63 @@ export default function ResidentDashboard({ session, onLogout }) {
                         </svg>
                         Owner History
                       </h3>
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
-                          <thead>
-                            <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                              <th style={{ padding: '0.75rem 0.5rem' }}>Owner Name</th>
-                              <th style={{ padding: '0.75rem 0.5rem' }}>Phone Number</th>
-                              <th style={{ padding: '0.75rem 0.5rem' }}>Email</th>
-                              <th style={{ padding: '0.75rem 0.5rem' }}>Transferred At / Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {allOwnerHistory.length === 0 ? (
-                              <tr>
-                                <td colSpan="4" style={{ textAlign: 'center', padding: '2rem 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                                  No owner records found for this flat.
-                                </td>
-                              </tr>
-                            ) : (
-                              allOwnerHistory.map(history => (
-                                <tr key={history.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
-                                  <td style={{ padding: '0.75rem 0.5rem', fontWeight: '600', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    {history.owner_name}
-                                    {history.transferred_at === 'Present' && (
-                                      <span className="badge badge-paid" style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px' }}>Current</span>
-                                    )}
-                                  </td>
-                                  <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{history.phone_number || '-'}</td>
-                                  <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{history.email || '-'}</td>
-                                  <td style={{ padding: '0.75rem 0.5rem' }}>
-                                    {history.transferred_at === 'Present' ? (
-                                      <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>Current Owner</span>
-                                    ) : (
-                                      history.transferred_at ? new Date(history.transferred_at).toLocaleString() : '-'
-                                    )}
-                                  </td>
+
+                      {allOwnerHistory.length === 0 ? (
+                        <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '1.5rem 0', fontSize: '0.9rem' }}>No owner records found for this flat.</p>
+                      ) : (
+                        <>
+                          {/* Desktop table */}
+                          <div className="desktop-only" style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                              <thead>
+                                <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                                  <th style={{ padding: '0.75rem 0.5rem' }}>Owner Name</th>
+                                  <th style={{ padding: '0.75rem 0.5rem' }}>Phone Number</th>
+                                  <th style={{ padding: '0.75rem 0.5rem' }}>Email</th>
+                                  <th style={{ padding: '0.75rem 0.5rem' }}>Transferred At / Status</th>
                                 </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
+                              </thead>
+                              <tbody>
+                                {allOwnerHistory.map(history => (
+                                  <tr key={history.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
+                                    <td style={{ padding: '0.75rem 0.5rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                      {history.owner_name}
+                                      {history.transferred_at === 'Present' && <span className="badge badge-paid" style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px' }}>Current</span>}
+                                    </td>
+                                    <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{history.phone_number || '-'}</td>
+                                    <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{history.email || '-'}</td>
+                                    <td style={{ padding: '0.75rem 0.5rem' }}>
+                                      {history.transferred_at === 'Present' ? <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>Current Owner</span> : (history.transferred_at ? new Date(history.transferred_at).toLocaleString() : '-')}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* Mobile cards */}
+                          <div className="mobile-only" style={{ display: 'none', flexDirection: 'column', gap: '0.75rem' }}>
+                            {allOwnerHistory.map(history => (
+                              <div key={history.id} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '0.9rem', border: '1px solid var(--glass-border)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                  <span style={{ fontWeight: '700', fontSize: '0.95rem' }}>{history.owner_name}</span>
+                                  {history.transferred_at === 'Present' && <span className="badge badge-paid" style={{ fontSize: '0.65rem', padding: '2px 7px' }}>Current</span>}
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem', fontSize: '0.83rem' }}>
+                                  <div style={{ color: 'var(--text-secondary)' }}>Phone</div>
+                                  <div>{history.phone_number || '-'}</div>
+                                  <div style={{ color: 'var(--text-secondary)' }}>Email</div>
+                                  <div style={{ wordBreak: 'break-all' }}>{history.email || '-'}</div>
+                                  <div style={{ color: 'var(--text-secondary)' }}>Status</div>
+                                  <div>
+                                    {history.transferred_at === 'Present' ? <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>Current Owner</span> : (history.transferred_at ? new Date(history.transferred_at).toLocaleString() : '-')}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })()}
