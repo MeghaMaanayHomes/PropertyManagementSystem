@@ -94,3 +94,34 @@ VALUES
 ('301', true, 'owner301', 'tenant301'), ('302', true, 'owner302', 'tenant302'), ('303', true, 'owner303', 'tenant303'), ('304', true, 'owner304', 'tenant304'), ('305', true, 'owner305', 'tenant305'), ('306', true, 'owner306', 'tenant306'), ('307', true, 'owner307', 'tenant307'), ('308', true, 'owner308', 'tenant308'),
 ('401', true, 'owner401', 'tenant401'), ('402', true, 'owner402', 'tenant402'), ('403', true, 'owner403', 'tenant403'), ('404', true, 'owner404', 'tenant404'), ('405', true, 'owner405', 'tenant405'), ('406', true, 'owner406', 'tenant406'), ('407', true, 'owner407', 'tenant407'), ('408', true, 'owner408', 'tenant408')
 ON CONFLICT (flat_no) DO NOTHING;
+
+-- 9. Create tenant_history table to track past tenants
+CREATE TABLE IF NOT EXISTS public.tenant_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    flat_no TEXT REFERENCES public.flats(flat_no) ON DELETE CASCADE,
+    tenant_name TEXT NOT NULL,
+    tenant_phone TEXT DEFAULT '',
+    tenant_email TEXT DEFAULT '',
+    occupied_from DATE NOT NULL,
+    occupied_to DATE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Disable Row Level Security (RLS) for tenant_history
+ALTER TABLE public.tenant_history DISABLE ROW LEVEL SECURITY;
+
+-- 10. Create approvals table to track requests that require admin verification
+CREATE TABLE IF NOT EXISTS public.approvals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    flat_no TEXT REFERENCES public.flats(flat_no) ON DELETE CASCADE,
+    request_type TEXT NOT NULL, -- 'occupancy_change' or 'payment_report'
+    status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Approved', 'Rejected')),
+    details JSONB NOT NULL,
+    raised_by TEXT NOT NULL, -- 'owner' or 'tenant'
+    admin_comments TEXT DEFAULT '',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Disable Row Level Security (RLS) for approvals
+ALTER TABLE public.approvals DISABLE ROW LEVEL SECURITY;

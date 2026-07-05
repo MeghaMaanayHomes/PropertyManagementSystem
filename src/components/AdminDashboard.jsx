@@ -19,6 +19,8 @@ export default function AdminDashboard({ session, onLogout }) {
   const [newNotice, setNewNotice] = useState({ title: '', content: '' });
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [selectedComplaint, setSelectedComplaint] = useState(null);
+  const [flatTenantHistory, setFlatTenantHistory] = useState([]);
+  const [approvals, setApprovals] = useState([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Statistics
@@ -35,6 +37,29 @@ export default function AdminDashboard({ session, onLogout }) {
   useEffect(() => {
     fetchData();
   }, [selectedMonth]);
+
+  useEffect(() => {
+    if (editingFlat?.flat_no) {
+      fetchFlatHistory(editingFlat.flat_no);
+    } else {
+      setFlatTenantHistory([]);
+    }
+  }, [editingFlat?.flat_no]);
+
+  const fetchFlatHistory = async (flatNum) => {
+    try {
+      const { data, error } = await supabase
+        .from('tenant_history')
+        .select('*')
+        .eq('flat_no', flatNum)
+        .order('occupied_to', { ascending: false });
+
+      if (error) throw error;
+      setFlatTenantHistory(data || []);
+    } catch (err) {
+      console.error('Error fetching flat tenant history:', err);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -74,6 +99,15 @@ export default function AdminDashboard({ session, onLogout }) {
 
       if (complaintsError) throw complaintsError;
       setComplaints(complaintsData || []);
+
+      // 5. Fetch approvals
+      const { data: approvalsData, error: approvalsError } = await supabase
+        .from('approvals')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (approvalsError) throw approvalsError;
+      setApprovals(approvalsData || []);
 
       // 5. Calculate Stats
       calculateStats(flatsData || [], recordsData || []);
@@ -120,6 +154,38 @@ export default function AdminDashboard({ session, onLogout }) {
   const handleUpdateFlat = async (e) => {
     e.preventDefault();
     try {
+      // 1. Fetch current flat to compare for tenant history archive
+      const { data: currentFlat, error: fetchError } = await supabase
+        .from('flats')
+        .select('*')
+        .eq('flat_no', editingFlat.flat_no)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+
+      if (currentFlat) {
+        const wasRented = currentFlat.is_vacant === false && currentFlat.is_owner_occupied === false;
+        const isNewNotRented = editingFlat.is_vacant === true || editingFlat.is_owner_occupied === true;
+        const hasTenantChanged = currentFlat.tenant_name !== editingFlat.tenant_name || currentFlat.tenant_phone !== editingFlat.tenant_phone;
+
+        if (wasRented && (isNewNotRented || hasTenantChanged)) {
+          // Archive old tenant details
+          const { error: historyError } = await supabase
+            .from('tenant_history')
+            .insert([{
+              flat_no: editingFlat.flat_no,
+              tenant_name: currentFlat.tenant_name || 'Unknown',
+              tenant_phone: currentFlat.tenant_phone || '',
+              tenant_email: currentFlat.tenant_email || '',
+              occupied_from: currentFlat.occupancy_from || new Date().toISOString().split('T')[0],
+              occupied_to: new Date().toISOString().split('T')[0]
+            }]);
+
+          if (historyError) throw historyError;
+        }
+      }
+
+      // 2. Perform flat update
       const { error } = await supabase
         .from('flats')
         .update({
@@ -142,6 +208,118 @@ export default function AdminDashboard({ session, onLogout }) {
       fetchData();
     } catch (err) {
       alert('Error updating flat: ' + err.message);
+    }
+  };
+
+  const handleAcceptRequest = async (req, adminComments = '') => {
+    try {
+      if (req.request_type === 'occupancy_change') {
+        const details = req.details || {};
+        
+        // 1. Compare and archive tenant history if needed
+        const { data: currentFlat, error: fetchError } = await supabase
+          .from('flats')
+          .select('*')
+          .eq('flat_no', req.flat_no)
+          .maybeSingle();
+
+        if (fetchError) throw fetchError;
+
+        if (currentFlat) {
+          const wasRented = currentFlat.is_vacant === false && currentFlat.is_owner_occupied === false;
+          const isNewNotRented = details.is_vacant === true || details.is_owner_occupied === true;
+          const hasTenantChanged = currentFlat.tenant_name !== details.tenant_name || currentFlat.tenant_phone !== details.tenant_phone;
+
+          if (wasRented && (isNewNotRented || hasTenantChanged)) {
+            const { error: historyError } = await supabase
+              .from('tenant_history')
+              .insert([{
+                flat_no: req.flat_no,
+                tenant_name: currentFlat.tenant_name || 'Unknown',
+                tenant_phone: currentFlat.tenant_phone || '',
+                tenant_email: currentFlat.tenant_email || '',
+                occupied_from: currentFlat.occupancy_from || new Date().toISOString().split('T')[0],
+                occupied_to: new Date().toISOString().split('T')[0]
+              }]);
+
+            if (historyError) throw historyError;
+          }
+        }
+
+        // 2. Perform flat table update
+        const { error: updateError } = await supabase
+          .from('flats')
+          .update({
+            owner_name: details.owner_name,
+            phone_number: details.phone_number,
+            email: details.email,
+            is_vacant: details.is_vacant,
+            is_owner_occupied: details.is_owner_occupied,
+            tenant_name: details.tenant_name,
+            tenant_phone: details.tenant_phone,
+            tenant_email: details.tenant_email,
+            occupancy_from: details.occupancy_from
+          })
+          .eq('flat_no', req.flat_no);
+
+        if (updateError) throw updateError;
+
+      } else if (req.request_type === 'payment_report') {
+        const details = req.details || {};
+        
+        // Upsert into maintenance_records
+        const { error: paymentError } = await supabase
+          .from('maintenance_records')
+          .upsert({
+            flat_no: req.flat_no,
+            billing_month: details.billing_month,
+            amount_due: details.amount_due || 2000.00,
+            amount_paid: details.amount_paid,
+            payment_status: details.payment_status,
+            payment_date: details.payment_date,
+            payment_method: details.payment_method,
+            transaction_id: details.transaction_id,
+            updated_at: new Date().toISOString()
+          });
+
+        if (paymentError) throw paymentError;
+      }
+
+      // 3. Mark approval request as Approved
+      const { error: approvalError } = await supabase
+        .from('approvals')
+        .update({
+          status: 'Approved',
+          admin_comments: adminComments,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', req.id);
+
+      if (approvalError) throw approvalError;
+
+      alert('Request approved successfully!');
+      fetchData();
+    } catch (err) {
+      alert('Error approving request: ' + err.message);
+    }
+  };
+
+  const handleRejectRequest = async (reqId, adminComments = '') => {
+    try {
+      const { error } = await supabase
+        .from('approvals')
+        .update({
+          status: 'Rejected',
+          admin_comments: adminComments,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', reqId);
+
+      if (error) throw error;
+      alert('Request rejected.');
+      fetchData();
+    } catch (err) {
+      alert('Error rejecting request: ' + err.message);
     }
   };
 
@@ -305,6 +483,21 @@ export default function AdminDashboard({ session, onLogout }) {
               <path d="M6 3h12M6 8h12M6 13h8.5a4.5 4.5 0 0 0 0-9H6M6 13h3L18 21" />
             </svg>
             Maintenance Ledger
+          </button>
+          <button
+            onClick={() => { setActiveTab('approvals'); setIsMobileMenuOpen(false); }}
+            className={`btn ${activeTab === 'approvals' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
+          >
+            <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+              <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+            </svg>
+            Approvals
+            {approvals.filter(a => a.status === 'Pending').length > 0 && (
+              <span style={{ marginLeft: 'auto', background: 'var(--primary)', color: 'white', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '10px' }}>
+                {approvals.filter(a => a.status === 'Pending').length}
+              </span>
+            )}
           </button>
           <button
             onClick={() => { setActiveTab('notices'); setIsMobileMenuOpen(false); }}
@@ -647,6 +840,135 @@ export default function AdminDashboard({ session, onLogout }) {
                 </div>
               </div>
             )}
+            {/* APPROVALS TAB */}
+            {activeTab === 'approvals' && (
+              <div>
+                <div className="mb-4">
+                  <h1 style={{ fontSize: '1.75rem' }}>Approval Requests Queue</h1>
+                  <p style={{ color: 'var(--text-secondary)' }}>Review, approve, or reject resident occupancy status changes and reported payments</p>
+                </div>
+
+                <div className="glass-panel" style={{ padding: '1.5rem', overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                        <th style={{ padding: '1rem 0.75rem' }}>Flat</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Date Raised</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Request Type</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Raised By</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Status</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Details</th>
+                        <th style={{ padding: '1rem 0.75rem', width: '300px' }}>Action & Feedback</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {approvals.length === 0 ? (
+                        <tr>
+                          <td colSpan="7" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                            No approval requests found.
+                          </td>
+                        </tr>
+                      ) : (
+                        approvals.map(req => {
+                          const date = new Date(req.created_at).toLocaleString();
+                          const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : 'Payment Report';
+                          const statusBadgeClass = req.status === 'Approved' ? 'badge-paid' : req.status === 'Rejected' ? 'badge-unpaid' : 'badge-partial';
+
+                          // Render nice details preview
+                          let detailsContent = null;
+                          if (req.request_type === 'occupancy_change') {
+                            const details = req.details || {};
+                            const statusStr = details.is_vacant ? 'Vacant' : (details.is_owner_occupied ? 'Owner Occupied' : 'Rented Out');
+                            detailsContent = (
+                              <div style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
+                                <div style={{ fontWeight: 'bold', color: 'var(--primary)' }}>Status: {statusStr}</div>
+                                <div>Owner: {details.owner_name} ({details.phone_number || 'No Phone'})</div>
+                                {!details.is_vacant && !details.is_owner_occupied && (
+                                  <div style={{ borderLeft: '2px solid var(--glass-border)', paddingLeft: '0.5rem', marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
+                                    Tenant: {details.tenant_name} ({details.tenant_phone})<br/>
+                                    Since: {details.occupancy_from}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          } else if (req.request_type === 'payment_report') {
+                            const details = req.details || {};
+                            detailsContent = (
+                              <div style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
+                                <div style={{ fontWeight: 'bold', color: 'var(--secondary)' }}>Month: {details.billing_month}</div>
+                                <div>Paid: <strong>₹{details.amount_paid}</strong> via {details.payment_method}</div>
+                                <div style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: '0.75rem' }}>Txn: {details.transaction_id || 'N/A'}</div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <tr key={req.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem', verticalAlign: 'top' }}>
+                              <td style={{ padding: '1rem 0.75rem', fontWeight: 'bold' }}>Flat {req.flat_no}</td>
+                              <td style={{ padding: '1rem 0.75rem', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{date}</td>
+                              <td style={{ padding: '1rem 0.75rem', fontWeight: '600' }}>{typeLabel}</td>
+                              <td style={{ padding: '1rem 0.75rem', textTransform: 'capitalize' }}>{req.raised_by}</td>
+                              <td style={{ padding: '1rem 0.75rem' }}>
+                                <span className={`badge ${statusBadgeClass}`}>
+                                  {req.status}
+                                </span>
+                              </td>
+                              <td style={{ padding: '1rem 0.75rem' }}>
+                                {detailsContent}
+                              </td>
+                              <td style={{ padding: '1rem 0.75rem' }}>
+                                {req.status === 'Pending' ? (
+                                  (() => {
+                                    return (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        <input
+                                          type="text"
+                                          className="input-field"
+                                          placeholder="Admin comments/feedback..."
+                                          style={{ padding: '0.4rem', fontSize: '0.8rem', width: '100%' }}
+                                          id={`comment-${req.id}`}
+                                        />
+                                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                          <button
+                                            className="btn btn-primary"
+                                            style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem', flex: 1 }}
+                                            onClick={() => {
+                                              const commentVal = document.getElementById(`comment-${req.id}`)?.value || '';
+                                              handleAcceptRequest(req, commentVal);
+                                            }}
+                                          >
+                                            Approve
+                                          </button>
+                                          <button
+                                            className="btn btn-danger"
+                                            style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem', flex: 1 }}
+                                            onClick={() => {
+                                              const commentVal = document.getElementById(`comment-${req.id}`)?.value || '';
+                                              handleRejectRequest(req.id, commentVal);
+                                            }}
+                                          >
+                                            Reject
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })()
+                                ) : (
+                                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                    <div><strong>Comments:</strong></div>
+                                    <div>{req.admin_comments || 'No comments left.'}</div>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* ANNOUNCEMENTS TAB */}
             {activeTab === 'notices' && (
@@ -814,42 +1136,46 @@ export default function AdminDashboard({ session, onLogout }) {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', margin: '1rem 0' }}>
-                <div className="input-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.75rem', marginBottom: 0 }}>
-                  <input
-                    id="vacant-checkbox"
-                    type="checkbox"
-                    checked={editingFlat.is_vacant}
-                    onChange={(e) => {
-                      const vacant = e.target.checked;
-                      setEditingFlat({
-                        ...editingFlat,
-                        is_vacant: vacant,
-                        is_owner_occupied: vacant ? true : (editingFlat.is_owner_occupied ?? true)
-                      });
-                    }}
-                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                  />
-                  <label htmlFor="vacant-checkbox" style={{ cursor: 'pointer', fontSize: '0.9rem' }}>Mark Flat as Vacant</label>
-                </div>
-
-                {!editingFlat.is_vacant && (
-                  <div className="input-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '0.75rem', marginBottom: 0 }}>
+              <div className="input-group" style={{ marginBottom: '1.25rem' }}>
+                <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.5rem' }}>Occupancy Status</label>
+                <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer' }}>
                     <input
-                      id="owner-occupied-checkbox"
-                      type="checkbox"
-                      checked={editingFlat.is_owner_occupied ?? true}
-                      onChange={(e) => setEditingFlat({ ...editingFlat, is_owner_occupied: e.target.checked })}
-                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      type="radio"
+                      name="admin_occupancy_status"
+                      checked={editingFlat.is_vacant === true}
+                      onChange={() => setEditingFlat({ ...editingFlat, is_vacant: true, is_owner_occupied: true })}
+                      style={{ accentColor: 'var(--primary)', width: '16px', height: '16px' }}
                     />
-                    <label htmlFor="owner-occupied-checkbox" style={{ cursor: 'pointer', fontSize: '0.9rem' }}>Owner Occupied (uncheck if Rented Out)</label>
-                  </div>
-                )}
+                    Vacant
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="admin_occupancy_status"
+                      checked={editingFlat.is_vacant === false && editingFlat.is_owner_occupied === true}
+                      onChange={() => setEditingFlat({ ...editingFlat, is_vacant: false, is_owner_occupied: true })}
+                      style={{ accentColor: 'var(--primary)', width: '16px', height: '16px' }}
+                    />
+                    Occupied by Owner
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="admin_occupancy_status"
+                      checked={editingFlat.is_vacant === false && editingFlat.is_owner_occupied === false}
+                      onChange={() => setEditingFlat({ ...editingFlat, is_vacant: false, is_owner_occupied: false })}
+                      style={{ accentColor: 'var(--primary)', width: '16px', height: '16px' }}
+                    />
+                    Rented out to Tenant
+                  </label>
+                </div>
               </div>
 
-              {!editingFlat.is_vacant && (
-                <div className="input-group">
-                  <label htmlFor="occupancy-from-input">Occupancy From Date</label>
+              {/* Occupied Date (Owner) */}
+              {!editingFlat.is_vacant && editingFlat.is_owner_occupied && (
+                <div className="input-group" style={{ marginBottom: '1rem' }}>
+                  <label htmlFor="occupancy-from-input">Occupied Since Date</label>
                   <input
                     id="occupancy-from-input"
                     type="date"
@@ -857,12 +1183,14 @@ export default function AdminDashboard({ session, onLogout }) {
                     style={{ padding: '0.5rem' }}
                     value={editingFlat.occupancy_from || ''}
                     onChange={(e) => setEditingFlat({ ...editingFlat, occupancy_from: e.target.value })}
+                    required
                   />
                 </div>
               )}
 
+              {/* Rented Out Tenant details */}
               {!editingFlat.is_vacant && !editingFlat.is_owner_occupied && (
-                <fieldset style={{ border: '1px solid var(--glass-border)', padding: '0.75rem', borderRadius: '8px', marginBottom: '1.25rem', background: 'rgba(255,255,255,0.01)' }}>
+                <fieldset style={{ border: '1px solid var(--glass-border)', padding: '1rem', borderRadius: '8px', marginBottom: '1.25rem', background: 'rgba(255,255,255,0.01)' }}>
                   <legend style={{ fontSize: '0.75rem', color: 'var(--primary)', padding: '0 0.5rem', fontWeight: 'bold' }}>Tenant Info</legend>
                   
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
@@ -876,6 +1204,7 @@ export default function AdminDashboard({ session, onLogout }) {
                         value={editingFlat.tenant_name || ''}
                         onChange={(e) => setEditingFlat({ ...editingFlat, tenant_name: e.target.value })}
                         required
+                        placeholder="Tenant full name"
                       />
                     </div>
 
@@ -893,8 +1222,8 @@ export default function AdminDashboard({ session, onLogout }) {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                    <div className="input-group" style={{ marginBottom: '0.5rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                    <div className="input-group" style={{ marginBottom: 0 }}>
                       <label htmlFor="tenant-phone-input">Tenant Phone</label>
                       <input
                         id="tenant-phone-input"
@@ -903,11 +1232,13 @@ export default function AdminDashboard({ session, onLogout }) {
                         style={{ padding: '0.5rem' }}
                         value={editingFlat.tenant_phone || ''}
                         onChange={(e) => setEditingFlat({ ...editingFlat, tenant_phone: e.target.value })}
+                        required
+                        placeholder="Phone number"
                       />
                     </div>
 
-                    <div className="input-group" style={{ marginBottom: '0.5rem' }}>
-                      <label htmlFor="tenant-email-input">Tenant Email</label>
+                    <div className="input-group" style={{ marginBottom: 0 }}>
+                      <label htmlFor="tenant-email-input">Tenant Email (Optional)</label>
                       <input
                         id="tenant-email-input"
                         type="email"
@@ -915,11 +1246,87 @@ export default function AdminDashboard({ session, onLogout }) {
                         style={{ padding: '0.5rem' }}
                         value={editingFlat.tenant_email || ''}
                         onChange={(e) => setEditingFlat({ ...editingFlat, tenant_email: e.target.value })}
+                        placeholder="Email address"
                       />
                     </div>
                   </div>
+
+                  <div className="input-group" style={{ marginBottom: 0, marginTop: '0.75rem' }}>
+                    <label htmlFor="occupancy-from-input-tenant">Occupied Since Date</label>
+                    <input
+                      id="occupancy-from-input-tenant"
+                      type="date"
+                      className="input-field"
+                      style={{ padding: '0.5rem' }}
+                      value={editingFlat.occupancy_from || ''}
+                      onChange={(e) => setEditingFlat({ ...editingFlat, occupancy_from: e.target.value })}
+                      required
+                    />
+                  </div>
                 </fieldset>
               )}
+
+              {/* Past Tenant History */}
+              {(() => {
+                const displayHistory = [];
+                if (!editingFlat.is_vacant && !editingFlat.is_owner_occupied && editingFlat.tenant_name) {
+                  displayHistory.push({
+                    id: 'current-tenant',
+                    tenant_name: editingFlat.tenant_name,
+                    tenant_phone: editingFlat.tenant_phone,
+                    tenant_email: editingFlat.tenant_email,
+                    occupied_from: editingFlat.occupancy_from,
+                    occupied_to: 'Present'
+                  });
+                }
+                const allHistory = [...displayHistory, ...flatTenantHistory];
+
+                return (
+                  <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--glass-border)', paddingTop: '1rem' }}>
+                    <h4 style={{ color: 'var(--primary)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.95rem' }}>
+                      <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+                      </svg>
+                      Tenant History
+                    </h4>
+                    <div style={{ maxHeight: '180px', overflowY: 'auto', background: 'rgba(0,0,0,0.1)', borderRadius: '6px', padding: '0.5rem', border: '1px solid var(--glass-border)' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8rem' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
+                            <th style={{ padding: '0.5rem 0.25rem' }}>Tenant Name</th>
+                            <th style={{ padding: '0.5rem 0.25rem' }}>Phone</th>
+                            <th style={{ padding: '0.5rem 0.25rem' }}>Occupied Range</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {allHistory.length === 0 ? (
+                            <tr>
+                              <td colSpan="3" style={{ textAlign: 'center', padding: '1rem 0', color: 'var(--text-muted)' }}>
+                                No tenant records.
+                              </td>
+                            </tr>
+                          ) : (
+                            allHistory.map(h => (
+                              <tr key={h.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                                <td style={{ padding: '0.5rem 0.25rem', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                  {h.tenant_name}
+                                  {h.occupied_to === 'Present' && (
+                                    <span className="badge badge-paid" style={{ fontSize: '0.55rem', padding: '0px 4px', borderRadius: '3px' }}>Current</span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '0.5rem 0.25rem' }}>{h.tenant_phone || '-'}</td>
+                                <td style={{ padding: '0.5rem 0.25rem', color: 'var(--text-secondary)' }}>
+                                  {h.occupied_from ? new Date(h.occupied_from).toLocaleDateString() : '-'} - {h.occupied_to === 'Present' ? 'Present' : (h.occupied_to ? new Date(h.occupied_to).toLocaleDateString() : '-')}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="flex-center gap-2" style={{ marginTop: '1.5rem' }}>
                 <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setEditingFlat(null)}>

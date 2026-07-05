@@ -19,6 +19,8 @@ export default function ResidentDashboard({ session, onLogout }) {
 
   // Edit Flat Info States (Owner Only)
   const [isEditingInfo, setIsEditingInfo] = useState(false);
+  const [tenantHistory, setTenantHistory] = useState([]);
+  const [approvals, setApprovals] = useState([]);
   const [editedDetails, setEditedDetails] = useState({
     owner_name: '',
     phone_number: '',
@@ -124,6 +126,28 @@ export default function ResidentDashboard({ session, onLogout }) {
       if (allFlatsError) throw allFlatsError;
       setFlats(allFlats || []);
 
+      // 6. Fetch tenant history (only if owner)
+      if (session.role === 'owner') {
+        const { data: historyData, error: historyError } = await supabase
+          .from('tenant_history')
+          .select('*')
+          .eq('flat_no', flatNo)
+          .order('occupied_to', { ascending: false });
+
+        if (historyError) throw historyError;
+        setTenantHistory(historyData || []);
+      }
+
+      // 7. Fetch approvals for this flat
+      const { data: approvalsData, error: approvalsError } = await supabase
+        .from('approvals')
+        .select('*')
+        .eq('flat_no', flatNo)
+        .order('created_at', { ascending: false });
+
+      if (approvalsError) throw approvalsError;
+      setApprovals(approvalsData || []);
+
     } catch (err) {
       console.error('Error fetching resident data:', err);
     } finally {
@@ -194,29 +218,36 @@ export default function ResidentDashboard({ session, onLogout }) {
 
   const handleSaveFlatInfo = async (e) => {
     e.preventDefault();
+    const confirmSave = window.confirm("Are you sure you want to submit flat details update for admin approval?");
+    if (!confirmSave) return;
     try {
       const { error } = await supabase
-        .from('flats')
-        .update({
-          owner_name: editedDetails.owner_name,
-          phone_number: editedDetails.phone_number,
-          email: editedDetails.email,
-          is_vacant: editedDetails.is_vacant,
-          is_owner_occupied: editedDetails.is_owner_occupied,
-          tenant_name: editedDetails.is_vacant || editedDetails.is_owner_occupied ? '' : editedDetails.tenant_name,
-          tenant_phone: editedDetails.is_vacant || editedDetails.is_owner_occupied ? '' : editedDetails.tenant_phone,
-          tenant_email: editedDetails.is_vacant || editedDetails.is_owner_occupied ? '' : editedDetails.tenant_email,
-          occupancy_from: editedDetails.is_vacant ? null : (editedDetails.occupancy_from || null)
-        })
-        .eq('flat_no', flatNo);
+        .from('approvals')
+        .insert([{
+          flat_no: flatNo,
+          request_type: 'occupancy_change',
+          details: {
+            owner_name: editedDetails.owner_name,
+            phone_number: editedDetails.phone_number,
+            email: editedDetails.email,
+            is_vacant: editedDetails.is_vacant,
+            is_owner_occupied: editedDetails.is_owner_occupied,
+            tenant_name: editedDetails.is_vacant || editedDetails.is_owner_occupied ? '' : editedDetails.tenant_name,
+            tenant_phone: editedDetails.is_vacant || editedDetails.is_owner_occupied ? '' : editedDetails.tenant_phone,
+            tenant_email: editedDetails.is_vacant || editedDetails.is_owner_occupied ? '' : editedDetails.tenant_email,
+            occupancy_from: editedDetails.is_vacant ? null : (editedDetails.occupancy_from || null)
+          },
+          raised_by: session.role,
+          status: 'Pending'
+        }]);
 
       if (error) throw error;
       
       setIsEditingInfo(false);
       fetchResidentData();
-      alert('Flat information updated successfully.');
+      alert('Request submitted for admin approval.');
     } catch (err) {
-      alert('Error updating flat information: ' + err.message);
+      alert('Error submitting request: ' + err.message);
     }
   };
 
@@ -231,18 +262,23 @@ export default function ResidentDashboard({ session, onLogout }) {
       }
       
       const { error } = await supabase
-        .from('maintenance_records')
-        .upsert({
+        .from('approvals')
+        .insert([{
           flat_no: flatNo,
-          billing_month: paymentReport.billing_month,
-          amount_due: 2000.00,
-          amount_paid: amountPaidNum,
-          payment_status: amountPaidNum >= 2000.00 ? 'Paid' : (amountPaidNum > 0 ? 'Partially Paid' : 'Unpaid'),
-          payment_date: paymentReport.payment_date ? new Date(paymentReport.payment_date).toISOString() : new Date().toISOString(),
-          payment_method: paymentReport.payment_method,
-          transaction_id: paymentReport.transaction_id,
-          updated_at: new Date().toISOString()
-        });
+          request_type: 'payment_report',
+          details: {
+            billing_month: paymentReport.billing_month,
+            amount_due: 2000.00,
+            amount_paid: amountPaidNum,
+            payment_status: amountPaidNum >= 2000.00 ? 'Paid' : (amountPaidNum > 0 ? 'Partially Paid' : 'Unpaid'),
+            payment_date: paymentReport.payment_date ? new Date(paymentReport.payment_date).toISOString() : new Date().toISOString(),
+            payment_method: paymentReport.payment_method,
+            transaction_id: paymentReport.transaction_id,
+            updated_at: new Date().toISOString()
+          },
+          raised_by: session.role,
+          status: 'Pending'
+        }]);
 
       if (error) throw error;
       
@@ -256,7 +292,7 @@ export default function ResidentDashboard({ session, onLogout }) {
         transaction_id: '',
         payment_date: new Date().toISOString().split('T')[0]
       });
-      setPaymentReportMessage({ type: 'success', text: 'Payment reported successfully!' });
+      setPaymentReportMessage({ type: 'success', text: 'Payment report submitted for admin approval!' });
       fetchResidentData();
     } catch (err) {
       setPaymentReportMessage({ type: 'error', text: err.message });
@@ -349,7 +385,7 @@ export default function ResidentDashboard({ session, onLogout }) {
               <rect x="14" y="12" width="7" height="9" rx="1"></rect>
               <rect x="3" y="16" width="7" height="5" rx="1"></rect>
             </svg>
-            Building Map
+            Flats
           </button>
           <button
             onClick={() => { setActiveTab('payments'); setIsMobileMenuOpen(false); }}
@@ -386,6 +422,16 @@ export default function ResidentDashboard({ session, onLogout }) {
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
             </svg>
             Complaints
+          </button>
+          <button
+            onClick={() => { setActiveTab('approvals'); setIsMobileMenuOpen(false); }}
+            className={`btn ${activeTab === 'approvals' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
+          >
+            <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+              <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+            </svg>
+            Approvals
           </button>
           <button
             onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }}
@@ -498,78 +544,111 @@ export default function ResidentDashboard({ session, onLogout }) {
                           />
                         </div>
 
-                        <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
-                            <input
-                              type="checkbox"
-                              checked={!editedDetails.is_vacant}
-                              onChange={(e) => setEditedDetails({ ...editedDetails, is_vacant: !e.target.checked })}
-                              style={{ accentColor: 'var(--primary)' }}
-                            />
-                            Flat is Occupied
-                          </label>
-
-                          {!editedDetails.is_vacant && (
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                        <div className="input-group" style={{ marginBottom: '1.25rem' }}>
+                          <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.5rem' }}>Occupancy Status</label>
+                          <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer' }}>
                               <input
-                                type="checkbox"
-                                checked={editedDetails.is_owner_occupied}
-                                onChange={(e) => setEditedDetails({ ...editedDetails, is_owner_occupied: e.target.checked })}
-                                style={{ accentColor: 'var(--primary)' }}
+                                type="radio"
+                                name="occupancy_status"
+                                checked={editedDetails.is_vacant === true}
+                                onChange={() => setEditedDetails({ ...editedDetails, is_vacant: true, is_owner_occupied: true })}
+                                style={{ accentColor: 'var(--primary)', width: '16px', height: '16px' }}
                               />
-                              Owner Occupied
+                              Vacant
                             </label>
-                          )}
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                              <input
+                                type="radio"
+                                name="occupancy_status"
+                                checked={editedDetails.is_vacant === false && editedDetails.is_owner_occupied === true}
+                                onChange={() => setEditedDetails({ ...editedDetails, is_vacant: false, is_owner_occupied: true })}
+                                style={{ accentColor: 'var(--primary)', width: '16px', height: '16px' }}
+                              />
+                              Occupied by Owner
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                              <input
+                                type="radio"
+                                name="occupancy_status"
+                                checked={editedDetails.is_vacant === false && editedDetails.is_owner_occupied === false}
+                                onChange={() => setEditedDetails({ ...editedDetails, is_vacant: false, is_owner_occupied: false })}
+                                style={{ accentColor: 'var(--primary)', width: '16px', height: '16px' }}
+                              />
+                              Rented out to Tenant
+                            </label>
+                          </div>
                         </div>
 
-                        {!editedDetails.is_vacant && (
+                        {/* Owner Occupied Date */}
+                        {!editedDetails.is_vacant && editedDetails.is_owner_occupied && (
                           <div className="input-group" style={{ marginBottom: '1rem' }}>
-                            <label style={{ fontSize: '0.8rem' }}>Occupancy From Date</label>
+                            <label style={{ fontSize: '0.8rem' }}>Occupied Since Date</label>
                             <input
                               type="date"
                               className="input-field"
                               style={{ padding: '0.5rem' }}
-                              value={editedDetails.occupancy_from}
+                              value={editedDetails.occupancy_from || ''}
                               onChange={(e) => setEditedDetails({ ...editedDetails, occupancy_from: e.target.value })}
+                              required
                             />
                           </div>
                         )}
 
+                        {/* Rented Out Tenant details */}
                         {!editedDetails.is_vacant && !editedDetails.is_owner_occupied && (
-                          <fieldset style={{ border: '1px solid var(--glass-border)', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', background: 'rgba(255,255,255,0.01)' }}>
+                          <fieldset style={{ border: '1px solid var(--glass-border)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', background: 'rgba(255,255,255,0.01)' }}>
                             <legend style={{ fontSize: '0.75rem', color: 'var(--primary)', padding: '0 0.5rem', fontWeight: 'bold' }}>Tenant Details</legend>
-                            <div className="input-group" style={{ marginBottom: '0.5rem' }}>
+                            
+                            <div className="input-group" style={{ marginBottom: '0.75rem' }}>
                               <label style={{ fontSize: '0.8rem' }}>Tenant Name</label>
                               <input
                                 type="text"
                                 className="input-field"
                                 style={{ padding: '0.5rem' }}
-                                value={editedDetails.tenant_name}
+                                value={editedDetails.tenant_name || ''}
                                 onChange={(e) => setEditedDetails({ ...editedDetails, tenant_name: e.target.value })}
                                 required
+                                placeholder="Enter tenant's full name"
                               />
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                              <div className="input-group" style={{ marginBottom: '0.5rem' }}>
+                            
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                              <div className="input-group" style={{ marginBottom: 0 }}>
                                 <label style={{ fontSize: '0.8rem' }}>Tenant Phone</label>
                                 <input
                                   type="text"
                                   className="input-field"
                                   style={{ padding: '0.5rem' }}
-                                  value={editedDetails.tenant_phone}
+                                  value={editedDetails.tenant_phone || ''}
                                   onChange={(e) => setEditedDetails({ ...editedDetails, tenant_phone: e.target.value })}
+                                  required
+                                  placeholder="Enter phone number"
                                 />
                               </div>
-                              <div className="input-group" style={{ marginBottom: '0.5rem' }}>
-                                <label style={{ fontSize: '0.8rem' }}>Tenant Email</label>
+                              <div className="input-group" style={{ marginBottom: 0 }}>
+                                <label style={{ fontSize: '0.8rem' }}>Tenant Email (Optional)</label>
                                 <input
                                   type="email"
                                   className="input-field"
                                   style={{ padding: '0.5rem' }}
-                                  value={editedDetails.tenant_email}
+                                  value={editedDetails.tenant_email || ''}
                                   onChange={(e) => setEditedDetails({ ...editedDetails, tenant_email: e.target.value })}
+                                  placeholder="Enter email address"
                                 />
                               </div>
+                            </div>
+
+                            <div className="input-group" style={{ marginBottom: 0 }}>
+                              <label style={{ fontSize: '0.8rem' }}>Occupied Since Date</label>
+                              <input
+                                type="date"
+                                className="input-field"
+                                style={{ padding: '0.5rem' }}
+                                value={editedDetails.occupancy_from || ''}
+                                onChange={(e) => setEditedDetails({ ...editedDetails, occupancy_from: e.target.value })}
+                                required
+                              />
                             </div>
                           </fieldset>
                         )}
@@ -600,23 +679,30 @@ export default function ResidentDashboard({ session, onLogout }) {
                           </span>
                         </div>
 
-                        {!flatDetails.is_vacant && (
+                        {!flatDetails.is_vacant && flatDetails.is_owner_occupied && (
                           <>
-                            <span style={{ color: 'var(--text-secondary)' }}>Occupied From:</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>Occupied Since:</span>
                             <span>{flatDetails.occupancy_from ? new Date(flatDetails.occupancy_from).toLocaleDateString() : 'Not set'}</span>
                           </>
                         )}
 
                         {!flatDetails.is_vacant && !flatDetails.is_owner_occupied && (
                           <>
+                            <span style={{ color: 'var(--text-secondary)' }}>Occupied Since:</span>
+                            <span>{flatDetails.occupancy_from ? new Date(flatDetails.occupancy_from).toLocaleDateString() : 'Not set'}</span>
+
                             <span style={{ color: 'var(--text-secondary)' }}>Tenant Name:</span>
                             <span style={{ fontWeight: '500' }}>{flatDetails.tenant_name || 'Not updated'}</span>
 
                             <span style={{ color: 'var(--text-secondary)' }}>Tenant Phone:</span>
                             <span>{flatDetails.tenant_phone || 'Not updated'}</span>
 
-                            <span style={{ color: 'var(--text-secondary)' }}>Tenant Email:</span>
-                            <span>{flatDetails.tenant_email || 'Not updated'}</span>
+                            {flatDetails.tenant_email && (
+                              <>
+                                <span style={{ color: 'var(--text-secondary)' }}>Tenant Email:</span>
+                                <span>{flatDetails.tenant_email}</span>
+                              </>
+                            )}
                           </>
                         )}
                       </div>
@@ -656,6 +742,76 @@ export default function ResidentDashboard({ session, onLogout }) {
                     )}
                   </div>
                 </div>
+
+                {/* Past Tenant History Panel (Owner Only) */}
+                {session.role === 'owner' && (() => {
+                  const displayHistory = [];
+                  if (!flatDetails.is_vacant && !flatDetails.is_owner_occupied && flatDetails.tenant_name) {
+                    displayHistory.push({
+                      id: 'current-tenant',
+                      tenant_name: flatDetails.tenant_name,
+                      tenant_phone: flatDetails.tenant_phone,
+                      tenant_email: flatDetails.tenant_email,
+                      occupied_from: flatDetails.occupancy_from,
+                      occupied_to: 'Present'
+                    });
+                  }
+                  const allHistory = [...displayHistory, ...tenantHistory];
+
+                  return (
+                    <div className="glass-panel" style={{ padding: '1.5rem', marginTop: '1.5rem' }}>
+                      <h3 style={{ fontSize: '1.15rem', color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ color: 'var(--primary)' }}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+                        </svg>
+                        Tenant History
+                      </h3>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                              <th style={{ padding: '0.75rem 0.5rem' }}>Tenant Name</th>
+                              <th style={{ padding: '0.75rem 0.5rem' }}>Phone Number</th>
+                              <th style={{ padding: '0.75rem 0.5rem' }}>Email</th>
+                              <th style={{ padding: '0.75rem 0.5rem' }}>Occupied From</th>
+                              <th style={{ padding: '0.75rem 0.5rem' }}>Occupied To</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {allHistory.length === 0 ? (
+                              <tr>
+                                <td colSpan="5" style={{ textAlign: 'center', padding: '2rem 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                                  No tenant records found for this flat.
+                                </td>
+                              </tr>
+                            ) : (
+                              allHistory.map(history => (
+                                <tr key={history.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
+                                  <td style={{ padding: '0.75rem 0.5rem', fontWeight: '600', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    {history.tenant_name}
+                                    {history.occupied_to === 'Present' && (
+                                      <span className="badge badge-paid" style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px' }}>Current</span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{history.tenant_phone || '-'}</td>
+                                  <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{history.tenant_email || '-'}</td>
+                                  <td style={{ padding: '0.75rem 0.5rem' }}>{history.occupied_from ? new Date(history.occupied_from).toLocaleDateString() : '-'}</td>
+                                  <td style={{ padding: '0.75rem 0.5rem' }}>
+                                    {history.occupied_to === 'Present' ? (
+                                      <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>Present</span>
+                                    ) : (
+                                      history.occupied_to ? new Date(history.occupied_to).toLocaleDateString() : '-'
+                                    )}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Split layout for Notice board and quick Complaint */}
                 <div className="grid-split-2-1" style={{ marginTop: '1.5rem' }}>
@@ -1116,6 +1272,75 @@ export default function ResidentDashboard({ session, onLogout }) {
                       Update Password
                     </button>
                   </form>
+                </div>
+              </div>
+            )}
+            {/* APPROVALS TAB */}
+            {activeTab === 'approvals' && (
+              <div>
+                <div className="mb-4">
+                  <h1 style={{ fontSize: '1.75rem' }}>My Approvals</h1>
+                  <p style={{ color: 'var(--text-secondary)' }}>Track the status of your flat update requests and reported payments</p>
+                </div>
+
+                <div className="glass-panel" style={{ padding: '1.5rem', overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                        <th style={{ padding: '1rem 0.75rem' }}>Date Raised</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Request Type</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Raised By</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Status</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Details</th>
+                        <th style={{ padding: '1rem 0.75rem' }}>Admin Comments</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {approvals.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                            No approval requests submitted yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        approvals.map(req => {
+                          const date = new Date(req.created_at).toLocaleString();
+                          const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : 'Payment Report';
+                          const statusBadgeClass = req.status === 'Approved' ? 'badge-paid' : req.status === 'Rejected' ? 'badge-unpaid' : 'badge-partial';
+                          
+                          // Render nice details preview
+                          let detailsStr = '';
+                          if (req.request_type === 'occupancy_change') {
+                            const details = req.details || {};
+                            const statusStr = details.is_vacant ? 'Vacant' : (details.is_owner_occupied ? 'Owner Occupied' : 'Rented Out');
+                            detailsStr = `Status: ${statusStr} | Owner: ${details.owner_name || 'N/A'}${details.tenant_name ? `, Tenant: ${details.tenant_name}` : ''}`;
+                          } else if (req.request_type === 'payment_report') {
+                            const details = req.details || {};
+                            detailsStr = `Month: ${details.billing_month} | Paid: ₹${details.amount_paid} via ${details.payment_method}`;
+                          }
+
+                          return (
+                            <tr key={req.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
+                              <td style={{ padding: '1rem 0.75rem', color: 'var(--text-secondary)' }}>{date}</td>
+                              <td style={{ padding: '1rem 0.75rem', fontWeight: 'bold' }}>{typeLabel}</td>
+                              <td style={{ padding: '1rem 0.75rem', textTransform: 'capitalize' }}>{req.raised_by}</td>
+                              <td style={{ padding: '1rem 0.75rem' }}>
+                                <span className={`badge ${statusBadgeClass}`}>
+                                  {req.status}
+                                </span>
+                              </td>
+                              <td style={{ padding: '1rem 0.75rem', color: 'var(--text-secondary)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {detailsStr}
+                              </td>
+                              <td style={{ padding: '1rem 0.75rem', color: req.status === 'Rejected' ? 'var(--accent)' : 'var(--text-secondary)' }}>
+                                {req.admin_comments || '-'}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
