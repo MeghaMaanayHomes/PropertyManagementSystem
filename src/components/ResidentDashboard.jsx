@@ -20,6 +20,7 @@ export default function ResidentDashboard({ session, onLogout }) {
   // Edit Flat Info States (Owner Only)
   const [isEditingInfo, setIsEditingInfo] = useState(false);
   const [tenantHistory, setTenantHistory] = useState([]);
+  const [ownerHistory, setOwnerHistory] = useState([]);
   const [approvals, setApprovals] = useState([]);
   const [editedDetails, setEditedDetails] = useState({
     owner_name: '',
@@ -48,13 +49,16 @@ export default function ResidentDashboard({ session, onLogout }) {
       const d = new Date();
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     })(),
-    amount_paid: '2000',
+    amount_paid: '',
     payment_method: 'UPI',
     transaction_id: '',
     payment_date: new Date().toISOString().split('T')[0]
   });
   const [submittingPaymentReport, setSubmittingPaymentReport] = useState(false);
   const [paymentReportMessage, setPaymentReportMessage] = useState({ type: '', text: '' });
+  const [paymentAttachment, setPaymentAttachment] = useState(null); // File object
+  const [paymentAttachmentPreview, setPaymentAttachmentPreview] = useState(null); // object URL
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   // Current month maintenance status
   const [currentMonthStatus, setCurrentMonthStatus] = useState({
@@ -64,6 +68,8 @@ export default function ResidentDashboard({ session, onLogout }) {
     paid: 0,
     record: null
   });
+
+  const [maintenanceAmount, setMaintenanceAmount] = useState(2000);
 
   const flatNo = session.flatNo;
 
@@ -82,7 +88,23 @@ export default function ResidentDashboard({ session, onLogout }) {
         .maybeSingle();
 
       if (flatError) throw flatError;
-      if (flatData) setFlatDetails(flatData);
+
+      if (flatData) {
+        if (session.role === 'owner') {
+          if (flatData.owner_name !== session.flatDetails?.owner_name || flatData.owner_password !== session.flatDetails?.owner_password) {
+            alert("Your session has expired (ownership details or password changed). Logging out...");
+            onLogout();
+            return;
+          }
+        } else if (session.role === 'tenant') {
+          if (flatData.tenant_name !== session.flatDetails?.tenant_name || flatData.tenant_password !== session.flatDetails?.tenant_password) {
+            alert("Your session has expired (tenant details or password changed). Logging out...");
+            onLogout();
+            return;
+          }
+        }
+        setFlatDetails(flatData);
+      }
 
       // 2. Fetch maintenance payments
       const { data: paymentsData, error: paymentsError } = await supabase
@@ -94,6 +116,27 @@ export default function ResidentDashboard({ session, onLogout }) {
       if (paymentsError) throw paymentsError;
       setPayments(paymentsData || []);
 
+      // Fetch settings for maintenance amount
+      const { data: settingsData } = await supabase
+        .from('settings')
+        .select('*');
+
+      let currentMaintenanceAmount = 2000;
+      if (settingsData) {
+        const amtSetting = settingsData.find(s => s.key === 'maintenance_amount');
+        if (amtSetting) {
+          const parsed = parseFloat(amtSetting.value);
+          if (!isNaN(parsed)) {
+            currentMaintenanceAmount = parsed;
+          }
+        }
+      }
+      setMaintenanceAmount(currentMaintenanceAmount);
+      setPaymentReport(prev => ({
+        ...prev,
+        amount_paid: prev.amount_paid === '' ? currentMaintenanceAmount.toString() : prev.amount_paid
+      }));
+
       // Calculate current month status
       const d = new Date();
       const currentMonthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -102,7 +145,7 @@ export default function ResidentDashboard({ session, onLogout }) {
       setCurrentMonthStatus({
         month: currentMonthStr,
         status: currentRecord ? currentRecord.payment_status : 'Unpaid',
-        due: currentRecord ? currentRecord.amount_due : 2000,
+        due: currentRecord ? currentRecord.amount_due : currentMaintenanceAmount,
         paid: currentRecord ? currentRecord.amount_paid : 0,
         record: currentRecord || null
       });
@@ -145,6 +188,15 @@ export default function ResidentDashboard({ session, onLogout }) {
 
         if (historyError) throw historyError;
         setTenantHistory(historyData || []);
+
+        const { data: ownerHistoryData, error: ownerHistoryError } = await supabase
+          .from('owner_history')
+          .select('*')
+          .eq('flat_no', flatNo)
+          .order('transferred_at', { ascending: false });
+
+        if (ownerHistoryError) throw ownerHistoryError;
+        setOwnerHistory(ownerHistoryData || []);
       }
 
       // 7. Fetch approvals for this flat
@@ -297,6 +349,21 @@ export default function ResidentDashboard({ session, onLogout }) {
     }
   };
 
+  const handlePaymentAttachmentFile = (file) => {
+    if (!file) return;
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'application/pdf'];
+    if (!validTypes.includes(file.type) && !file.type.startsWith('image/')) {
+      alert('Only image files (JPG, PNG, GIF, WEBP) or PDF are allowed.');
+      return;
+    }
+    setPaymentAttachment(file);
+    if (file.type.startsWith('image/')) {
+      setPaymentAttachmentPreview(URL.createObjectURL(file));
+    } else {
+      setPaymentAttachmentPreview(null); // PDF - no preview
+    }
+  };
+
   const handleReportPayment = async (e) => {
     e.preventDefault();
     setSubmittingPaymentReport(true);
@@ -306,6 +373,23 @@ export default function ResidentDashboard({ session, onLogout }) {
       if (isNaN(amountPaidNum) || amountPaidNum < 0) {
         throw new Error('Please enter a valid amount paid.');
       }
+
+      // Upload attachment to Supabase Storage if provided
+      let attachment_url = null;
+      if (paymentAttachment) {
+        const ext = paymentAttachment.name.split('.').pop();
+        const fileName = `payment_${flatNo}_${Date.now()}.${ext}`;
+        const { error: uploadError } = await supabase.storage
+          .from('payment-attachments')
+          .upload(fileName, paymentAttachment, { upsert: false });
+
+        if (uploadError) throw new Error('File upload failed: ' + uploadError.message);
+
+        const { data: urlData } = supabase.storage
+          .from('payment-attachments')
+          .getPublicUrl(fileName);
+        attachment_url = urlData?.publicUrl || null;
+      }
       
       const { error } = await supabase
         .from('approvals')
@@ -314,12 +398,13 @@ export default function ResidentDashboard({ session, onLogout }) {
           request_type: 'payment_report',
           details: {
             billing_month: paymentReport.billing_month,
-            amount_due: 2000.00,
+            amount_due: maintenanceAmount,
             amount_paid: amountPaidNum,
-            payment_status: amountPaidNum >= 2000.00 ? 'Paid' : (amountPaidNum > 0 ? 'Partially Paid' : 'Unpaid'),
+            payment_status: amountPaidNum >= maintenanceAmount ? 'Paid' : (amountPaidNum > 0 ? 'Partially Paid' : 'Unpaid'),
             payment_date: paymentReport.payment_date ? new Date(paymentReport.payment_date).toISOString() : new Date().toISOString(),
             payment_method: paymentReport.payment_method,
             transaction_id: paymentReport.transaction_id,
+            attachment_url,
             updated_at: new Date().toISOString()
           },
           raised_by: session.role,
@@ -333,11 +418,13 @@ export default function ResidentDashboard({ session, onLogout }) {
           const d = new Date();
           return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         })(),
-        amount_paid: '2000',
+        amount_paid: maintenanceAmount.toString(),
         payment_method: 'UPI',
         transaction_id: '',
         payment_date: new Date().toISOString().split('T')[0]
       });
+      setPaymentAttachment(null);
+      setPaymentAttachmentPreview(null);
       setPaymentReportMessage({ type: 'success', text: 'Payment report submitted for admin approval!' });
       fetchResidentData();
     } catch (err) {
@@ -762,7 +849,7 @@ export default function ResidentDashboard({ session, onLogout }) {
 
                         <div className="grid-split-1-1" style={{ gap: '0.75rem', marginBottom: '1.25rem' }}>
                           <div className="input-group" style={{ marginBottom: '0.5rem' }}>
-                            <label htmlFor="new-owner-email" style={{ fontSize: '0.85rem' }}>New Owner Email</label>
+                            <label htmlFor="new-owner-email" style={{ fontSize: '0.85rem' }}>New Owner Email (Optional)</label>
                             <input
                               id="new-owner-email"
                               type="email"
@@ -770,7 +857,6 @@ export default function ResidentDashboard({ session, onLogout }) {
                               style={{ padding: '0.5rem' }}
                               value={transferForm.new_owner_email}
                               onChange={(e) => setTransferForm({ ...transferForm, new_owner_email: e.target.value })}
-                              required
                               placeholder="Email address"
                             />
                           </div>
@@ -937,6 +1023,73 @@ export default function ResidentDashboard({ session, onLogout }) {
                                       <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>Present</span>
                                     ) : (
                                       history.occupied_to ? new Date(history.occupied_to).toLocaleDateString() : '-'
+                                    )}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Past Owner History Panel (Owner Only) */}
+                {session.role === 'owner' && (() => {
+                  const displayOwnerHistory = [];
+                  if (flatDetails.owner_name) {
+                    displayOwnerHistory.push({
+                      id: 'current-owner',
+                      owner_name: flatDetails.owner_name,
+                      phone_number: flatDetails.phone_number,
+                      email: flatDetails.email,
+                      transferred_at: 'Present'
+                    });
+                  }
+                  const allOwnerHistory = [...displayOwnerHistory, ...ownerHistory];
+
+                  return (
+                    <div className="glass-panel" style={{ padding: '1.5rem', marginTop: '1.5rem' }}>
+                      <h3 style={{ fontSize: '1.15rem', color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ color: 'var(--primary)' }}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        Owner History
+                      </h3>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                              <th style={{ padding: '0.75rem 0.5rem' }}>Owner Name</th>
+                              <th style={{ padding: '0.75rem 0.5rem' }}>Phone Number</th>
+                              <th style={{ padding: '0.75rem 0.5rem' }}>Email</th>
+                              <th style={{ padding: '0.75rem 0.5rem' }}>Transferred At / Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {allOwnerHistory.length === 0 ? (
+                              <tr>
+                                <td colSpan="4" style={{ textAlign: 'center', padding: '2rem 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                                  No owner records found for this flat.
+                                </td>
+                              </tr>
+                            ) : (
+                              allOwnerHistory.map(history => (
+                                <tr key={history.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
+                                  <td style={{ padding: '0.75rem 0.5rem', fontWeight: '600', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    {history.owner_name}
+                                    {history.transferred_at === 'Present' && (
+                                      <span className="badge badge-paid" style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: '4px' }}>Current</span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{history.phone_number || '-'}</td>
+                                  <td style={{ padding: '0.75rem 0.5rem', color: 'var(--text-secondary)' }}>{history.email || '-'}</td>
+                                  <td style={{ padding: '0.75rem 0.5rem' }}>
+                                    {history.transferred_at === 'Present' ? (
+                                      <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>Current Owner</span>
+                                    ) : (
+                                      history.transferred_at ? new Date(history.transferred_at).toLocaleString() : '-'
                                     )}
                                   </td>
                                 </tr>
@@ -1136,10 +1289,9 @@ export default function ResidentDashboard({ session, onLogout }) {
                           onChange={(e) => setPaymentReport({ ...paymentReport, payment_method: e.target.value })}
                           style={{ appearance: 'none', background: 'rgba(255,255,255,0.03) url("data:image/svg+xml;utf8,<svg fill=\'%2394a3b8\' height=\'24\' viewBox=\'0 0 24 24\' width=\'24\' xmlns=\'http://www.w3.org/2000/svg\'><path d=\'M7 10l5 5 5-5z\'/></svg>") no-repeat right 12px center' }}
                         >
-                          <option value="UPI" style={{ background: 'var(--bg-secondary)', color: 'white' }}>UPI / NetBanking</option>
+                          <option value="UPI" style={{ background: 'var(--bg-secondary)', color: 'white' }}>UPI</option>
                           <option value="Bank Transfer" style={{ background: 'var(--bg-secondary)', color: 'white' }}>Bank Transfer</option>
                           <option value="Cash" style={{ background: 'var(--bg-secondary)', color: 'white' }}>Cash</option>
-                          <option value="Card" style={{ background: 'var(--bg-secondary)', color: 'white' }}>Card</option>
                         </select>
                       </div>
 
@@ -1154,13 +1306,83 @@ export default function ResidentDashboard({ session, onLogout }) {
                         />
                       </div>
 
+                      {/* Attachment Upload */}
+                      <div className="input-group" style={{ marginBottom: '1.5rem' }}>
+                        <label style={{ fontSize: '0.85rem', marginBottom: '0.5rem', display: 'block' }}>Payment Proof / Screenshot</label>
+                        <div
+                          onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(true); }}
+                          onDragLeave={() => setIsDraggingOver(false)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setIsDraggingOver(false);
+                            const file = e.dataTransfer.files[0];
+                            if (file) handlePaymentAttachmentFile(file);
+                          }}
+                          onClick={() => document.getElementById('payment-attachment-input').click()}
+                          style={{
+                            border: `2px dashed ${isDraggingOver ? 'var(--primary)' : 'var(--glass-border)'}`,
+                            borderRadius: '10px',
+                            padding: '1.5rem',
+                            textAlign: 'center',
+                            cursor: 'pointer',
+                            background: isDraggingOver ? 'rgba(99,102,241,0.08)' : 'rgba(255,255,255,0.02)',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          {paymentAttachmentPreview ? (
+                            <div style={{ position: 'relative', display: 'inline-block' }}>
+                              <img
+                                src={paymentAttachmentPreview}
+                                alt="Payment proof preview"
+                                style={{ maxHeight: '200px', maxWidth: '100%', borderRadius: '8px', objectFit: 'contain' }}
+                              />
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setPaymentAttachment(null); setPaymentAttachmentPreview(null); }}
+                                style={{
+                                  position: 'absolute', top: '-8px', right: '-8px',
+                                  background: 'var(--error, #ef4444)', border: 'none', borderRadius: '50%',
+                                  width: '22px', height: '22px', cursor: 'pointer', color: 'white',
+                                  fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}
+                              >✕</button>
+                            </div>
+                          ) : paymentAttachment ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                              <svg width="32" height="32" fill="none" stroke="var(--primary)" strokeWidth="2" viewBox="0 0 24 24">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                              </svg>
+                              <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: '600' }}>{paymentAttachment.name}</span>
+                              <button type="button" onClick={(e) => { e.stopPropagation(); setPaymentAttachment(null); setPaymentAttachmentPreview(null); }}
+                                style={{ fontSize: '0.75rem', color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}>Remove</button>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)' }}>
+                              <svg width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+                              </svg>
+                              <span style={{ fontSize: '0.85rem' }}>Drag & drop your screenshot here</span>
+                              <span style={{ fontSize: '0.78rem' }}>or <span style={{ color: 'var(--primary)', fontWeight: '600' }}>click to browse</span></span>
+                              <span style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>JPG, PNG, GIF, WEBP, PDF</span>
+                            </div>
+                          )}
+                        </div>
+                        <input
+                          id="payment-attachment-input"
+                          type="file"
+                          accept="image/*,application/pdf"
+                          style={{ display: 'none' }}
+                          onChange={(e) => { const file = e.target.files[0]; if (file) handlePaymentAttachmentFile(file); }}
+                        />
+                      </div>
+
                       <button
                         type="submit"
                         className="btn btn-primary"
                         disabled={submittingPaymentReport}
                         style={{ width: '100%', padding: '0.75rem' }}
                       >
-                        {submittingPaymentReport ? 'Reporting...' : 'Submit Payment Details'}
+                        {submittingPaymentReport ? 'Uploading & Reporting...' : 'Submit Payment Details'}
                       </button>
                     </form>
                   </div>

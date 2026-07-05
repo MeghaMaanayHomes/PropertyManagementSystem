@@ -23,6 +23,11 @@ export default function AdminDashboard({ session, onLogout }) {
   const [approvals, setApprovals] = useState([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // Settings States
+  const [maintenanceAmount, setMaintenanceAmount] = useState(2000);
+  const [maintenanceAmountInput, setMaintenanceAmountInput] = useState(2000);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
   // Statistics
   const [stats, setStats] = useState({
     totalFlats: 40,
@@ -109,8 +114,26 @@ export default function AdminDashboard({ session, onLogout }) {
       if (approvalsError) throw approvalsError;
       setApprovals(approvalsData || []);
 
+      // 6. Fetch settings
+      const { data: settingsData, error: settingsError } = await supabase
+        .from('settings')
+        .select('*');
+
+      let currentMaintenanceAmount = 2000;
+      if (!settingsError && settingsData) {
+        const amtSetting = settingsData.find(s => s.key === 'maintenance_amount');
+        if (amtSetting) {
+          const parsed = parseFloat(amtSetting.value);
+          if (!isNaN(parsed)) {
+            currentMaintenanceAmount = parsed;
+            setMaintenanceAmount(parsed);
+            setMaintenanceAmountInput(parsed);
+          }
+        }
+      }
+
       // 5. Calculate Stats
-      calculateStats(flatsData || [], recordsData || []);
+      calculateStats(flatsData || [], recordsData || [], currentMaintenanceAmount);
     } catch (err) {
       console.error('Error fetching admin data:', err);
     } finally {
@@ -118,21 +141,21 @@ export default function AdminDashboard({ session, onLogout }) {
     }
   };
 
-  const calculateStats = (flatsList, recordsList) => {
+  const calculateStats = (flatsList, recordsList, mAmount = 2000) => {
     const total = 40;
     const occupied = flatsList.filter(f => !f.is_vacant).length;
     const vacant = total - occupied;
 
     // We assume every flat should pay maintenance. 
-    // If a record doesn't exist for a flat, its amount due is 2000 (default) and paid is 0.
+    // If a record doesn't exist for a flat, its amount due is mAmount (default) and paid is 0.
     let totalCollected = 0;
-    let totalExpected = total * 2000; // default 2000 per flat
+    let totalExpected = total * mAmount; // default mAmount per flat
 
     recordsList.forEach(r => {
       totalCollected += Number(r.amount_paid || 0);
       // If a flat has a custom amount_due, we adjust our expected total
       if (r.amount_due !== undefined) {
-        totalExpected = totalExpected - 2000 + Number(r.amount_due);
+        totalExpected = totalExpected - mAmount + Number(r.amount_due);
       }
     });
 
@@ -292,6 +315,21 @@ export default function AdminDashboard({ session, onLogout }) {
 
             if (historyError) throw historyError;
           }
+
+          // Archive old owner to owner_history
+          if (currentFlat.owner_name) {
+            const { error: ownerHistoryError } = await supabase
+              .from('owner_history')
+              .insert([{
+                flat_no: req.flat_no,
+                owner_name: currentFlat.owner_name,
+                phone_number: currentFlat.phone_number || '',
+                email: currentFlat.email || '',
+                transferred_at: new Date().toISOString()
+              }]);
+
+            if (ownerHistoryError) throw ownerHistoryError;
+          }
         }
 
         // 2. Perform flat table update for new owner & reset occupancy status
@@ -322,7 +360,7 @@ export default function AdminDashboard({ session, onLogout }) {
           .upsert({
             flat_no: req.flat_no,
             billing_month: details.billing_month,
-            amount_due: details.amount_due || 2000.00,
+            amount_due: details.amount_due || maintenanceAmount,
             amount_paid: details.amount_paid,
             payment_status: details.payment_status,
             payment_date: details.payment_date,
@@ -378,7 +416,7 @@ export default function AdminDashboard({ session, onLogout }) {
       const record = {
         flat_no: recordingPayment.flat_no,
         billing_month: selectedMonth,
-        amount_due: Number(recordingPayment.amount_due || 2000),
+        amount_due: Number(recordingPayment.amount_due || maintenanceAmount),
         amount_paid: Number(recordingPayment.amount_paid || 0),
         payment_status: recordingPayment.payment_status,
         payment_date: recordingPayment.payment_date ? new Date(recordingPayment.payment_date).toISOString() : null,
@@ -396,6 +434,35 @@ export default function AdminDashboard({ session, onLogout }) {
       fetchData();
     } catch (err) {
       alert('Error saving payment record: ' + err.message);
+    }
+  };
+
+  const handleSaveSettings = async (e) => {
+    e.preventDefault();
+    setIsSavingSettings(true);
+    try {
+      const parsed = parseFloat(maintenanceAmountInput);
+      if (isNaN(parsed) || parsed <= 0) {
+        throw new Error('Please enter a valid positive number for the maintenance amount.');
+      }
+
+      const { error } = await supabase
+        .from('settings')
+        .upsert({
+          key: 'maintenance_amount',
+          value: parsed.toString(),
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      setMaintenanceAmount(parsed);
+      alert('Settings saved successfully!');
+      fetchData(); // Refresh stats with new dues
+    } catch (err) {
+      alert('Error saving settings: ' + err.message);
+    } finally {
+      setIsSavingSettings(false);
     }
   };
 
@@ -573,6 +640,17 @@ export default function AdminDashboard({ session, onLogout }) {
                 {complaints.filter(c => c.status === 'Pending').length}
               </span>
             )}
+          </button>
+          <button
+            onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }}
+            className={`btn ${activeTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
+          >
+            <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            Settings
           </button>
         </nav>
 
@@ -962,7 +1040,7 @@ export default function AdminDashboard({ session, onLogout }) {
                             const record = maintenanceRecords.find(r => r.flat_no === flat.flat_no);
                             const paid = record ? record.amount_paid : 0;
                             const status = record ? record.payment_status : 'Unpaid';
-                            const due = record ? record.amount_due : 2000;
+                            const due = record ? record.amount_due : maintenanceAmount;
                             const outstanding = Math.max(0, due - paid);
                             const name = flat.is_vacant 
                               ? 'Vacant' 
@@ -1131,7 +1209,7 @@ export default function AdminDashboard({ session, onLogout }) {
                       {flats.map(flat => {
                         const record = maintenanceRecords.find(r => r.flat_no === flat.flat_no);
                         const paid = record ? record.amount_paid : 0;
-                        const due = record ? record.amount_due : 2000;
+                        const due = record ? record.amount_due : maintenanceAmount;
                         const status = record ? record.payment_status : 'Unpaid';
                         const method = record ? record.payment_method : '-';
                         const date = record && record.payment_date ? new Date(record.payment_date).toLocaleDateString() : '-';
@@ -1185,7 +1263,7 @@ export default function AdminDashboard({ session, onLogout }) {
                     {flats.map(flat => {
                       const record = maintenanceRecords.find(r => r.flat_no === flat.flat_no);
                       const paid = record ? record.amount_paid : 0;
-                      const due = record ? record.amount_due : 2000;
+                      const due = record ? record.amount_due : maintenanceAmount;
                       const status = record ? record.payment_status : 'Unpaid';
                       const method = record ? record.payment_method : '-';
                       const date = record && record.payment_date ? new Date(record.payment_date).toLocaleDateString() : '-';
@@ -1315,6 +1393,17 @@ export default function AdminDashboard({ session, onLogout }) {
                                 <div style={{ fontWeight: 'bold', color: 'var(--secondary)' }}>Month: {details.billing_month}</div>
                                 <div>Paid: <strong>₹{details.amount_paid}</strong> via {details.payment_method}</div>
                                 <div style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: '0.75rem' }}>Txn: {details.transaction_id || 'N/A'}</div>
+                                {details.attachment_url && (
+                                  <div style={{ marginTop: '0.5rem' }}>
+                                    <a href={details.attachment_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                                      <img src={details.attachment_url} alt="Payment proof"
+                                        style={{ maxHeight: '80px', maxWidth: '120px', borderRadius: '6px', objectFit: 'cover', border: '1px solid var(--glass-border)', display: 'block' }}
+                                        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'inline'; }}
+                                      />
+                                      <span style={{ display: 'none', fontSize: '0.75rem', color: 'var(--primary)' }}>📎 View Attachment</span>
+                                    </a>
+                                  </div>
+                                )}
                               </div>
                             );
                           }
@@ -1432,6 +1521,18 @@ export default function AdminDashboard({ session, onLogout }) {
                               <div><strong>Month:</strong> {details.billing_month}</div>
                               <div><strong>Paid:</strong> <strong>₹{details.amount_paid}</strong> via {details.payment_method}</div>
                               <div style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: '0.75rem' }}>Txn: {details.transaction_id || 'N/A'}</div>
+                              {details.attachment_url && (
+                                <div style={{ marginTop: '0.75rem' }}>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontWeight: '600' }}>📎 Payment Proof</div>
+                                  <a href={details.attachment_url} target="_blank" rel="noopener noreferrer">
+                                    <img src={details.attachment_url} alt="Payment proof"
+                                      style={{ maxHeight: '130px', maxWidth: '100%', borderRadius: '8px', objectFit: 'contain', border: '1px solid var(--glass-border)', display: 'block' }}
+                                      onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'inline'; }}
+                                    />
+                                    <span style={{ display: 'none', fontSize: '0.8rem', color: 'var(--primary)', textDecoration: 'underline' }}>📎 View Attachment</span>
+                                  </a>
+                                </div>
+                              )}
                             </div>
                           );
                         }
@@ -1603,6 +1704,53 @@ export default function AdminDashboard({ session, onLogout }) {
                 </div>
               </div>
             )}
+
+            {/* SETTINGS TAB */}
+            {activeTab === 'settings' && (
+              <div>
+                <div className="mb-4">
+                  <h1 style={{ fontSize: '1.75rem' }}>Portal Settings</h1>
+                  <p style={{ color: 'var(--text-secondary)' }}>Manage portal-wide configurations and fees</p>
+                </div>
+
+                <div className="glass-panel" style={{ padding: '2rem', maxWidth: '600px' }}>
+                  <form onSubmit={handleSaveSettings}>
+                    <h3 style={{ fontSize: '1.2rem', marginBottom: '1.25rem', color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
+                      Maintenance Fee Configuration
+                    </h3>
+                    
+                    <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.5' }}>
+                      Set the default monthly maintenance fee that is charged to each flat. Changes will apply to all calculations and new payment reports generated on the portal.
+                    </p>
+
+                    <div className="input-group" style={{ marginBottom: '1.5rem', maxWidth: '300px' }}>
+                      <label htmlFor="settings-maintenance-fee" style={{ fontWeight: '600' }}>Monthly Maintenance Fee (₹)</label>
+                      <input
+                        id="settings-maintenance-fee"
+                        type="number"
+                        min="1"
+                        step="1"
+                        className="input-field"
+                        value={maintenanceAmountInput}
+                        onChange={(e) => setMaintenanceAmountInput(e.target.value)}
+                        required
+                        placeholder="e.g. 2000"
+                        style={{ padding: '0.75rem' }}
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      disabled={isSavingSettings}
+                      style={{ padding: '0.75rem 1.5rem' }}
+                    >
+                      {isSavingSettings ? 'Saving Changes...' : 'Save Settings'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
           </>
         )}
       </main>
@@ -1679,7 +1827,6 @@ export default function AdminDashboard({ session, onLogout }) {
                   <option value="UPI">UPI</option>
                   <option value="Bank Transfer">Bank Transfer</option>
                   <option value="Cash">Cash</option>
-                  <option value="Cheque">Cheque</option>
                 </select>
               </div>
 

@@ -125,3 +125,54 @@ CREATE TABLE IF NOT EXISTS public.approvals (
 
 -- Disable Row Level Security (RLS) for approvals
 ALTER TABLE public.approvals DISABLE ROW LEVEL SECURITY;
+
+-- 11. Create owner_history table to track past owners of flats
+CREATE TABLE IF NOT EXISTS public.owner_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    flat_no TEXT REFERENCES public.flats(flat_no) ON DELETE CASCADE,
+    owner_name TEXT NOT NULL,
+    phone_number TEXT DEFAULT '',
+    email TEXT DEFAULT '',
+    transferred_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Disable Row Level Security (RLS) for owner_history
+ALTER TABLE public.owner_history DISABLE ROW LEVEL SECURITY;
+
+-- 12. Create settings table for global portal configuration
+CREATE TABLE IF NOT EXISTS public.settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Disable Row Level Security (RLS) for settings
+ALTER TABLE public.settings DISABLE ROW LEVEL SECURITY;
+
+-- Seed default maintenance fee setting
+INSERT INTO public.settings (key, value)
+VALUES ('maintenance_amount', '2000')
+ON CONFLICT (key) DO NOTHING;
+
+
+-- Create the bucket
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'payment-attachments',
+  'payment-attachments',
+  true,
+  5242880,
+  ARRAY['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'application/pdf']
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- Allow anyone to upload
+CREATE POLICY "Allow public uploads" ON storage.objects
+  FOR INSERT TO anon, authenticated
+  WITH CHECK (bucket_id = 'payment-attachments');
+
+-- Allow anyone to read
+CREATE POLICY "Allow public reads" ON storage.objects
+  FOR SELECT TO anon, authenticated
+  USING (bucket_id = 'payment-attachments');
