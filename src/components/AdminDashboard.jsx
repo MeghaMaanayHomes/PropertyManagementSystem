@@ -264,6 +264,55 @@ export default function AdminDashboard({ session, onLogout }) {
 
         if (updateError) throw updateError;
 
+      } else if (req.request_type === 'ownership_transfer') {
+        const details = req.details || {};
+
+        // 1. Fetch current flat state to archive tenant history if needed
+        const { data: currentFlat, error: fetchError } = await supabase
+          .from('flats')
+          .select('*')
+          .eq('flat_no', req.flat_no)
+          .maybeSingle();
+
+        if (fetchError) throw fetchError;
+
+        if (currentFlat) {
+          const wasRented = currentFlat.is_vacant === false && currentFlat.is_owner_occupied === false;
+          if (wasRented) {
+            const { error: historyError } = await supabase
+              .from('tenant_history')
+              .insert([{
+                flat_no: req.flat_no,
+                tenant_name: currentFlat.tenant_name || 'Unknown',
+                tenant_phone: currentFlat.tenant_phone || '',
+                tenant_email: currentFlat.tenant_email || '',
+                occupied_from: currentFlat.occupancy_from || new Date().toISOString().split('T')[0],
+                occupied_to: new Date().toISOString().split('T')[0]
+              }]);
+
+            if (historyError) throw historyError;
+          }
+        }
+
+        // 2. Perform flat table update for new owner & reset occupancy status
+        const { error: updateError } = await supabase
+          .from('flats')
+          .update({
+            owner_name: details.new_owner_name,
+            phone_number: details.new_owner_phone,
+            email: details.new_owner_email,
+            owner_password: details.new_owner_password,
+            is_vacant: true,
+            is_owner_occupied: true,
+            tenant_name: '',
+            tenant_phone: '',
+            tenant_email: '',
+            occupancy_from: null
+          })
+          .eq('flat_no', req.flat_no);
+
+        if (updateError) throw updateError;
+
       } else if (req.request_type === 'payment_report') {
         const details = req.details || {};
         
@@ -1229,7 +1278,7 @@ export default function AdminDashboard({ session, onLogout }) {
                       ) : (
                         approvals.map(req => {
                           const date = new Date(req.created_at).toLocaleString();
-                          const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : 'Payment Report';
+                          const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : 'Payment Report';
                           const statusBadgeClass = req.status === 'Approved' ? 'badge-paid' : req.status === 'Rejected' ? 'badge-unpaid' : 'badge-partial';
 
                           // Render nice details preview
@@ -1247,6 +1296,16 @@ export default function AdminDashboard({ session, onLogout }) {
                                     Since: {details.occupancy_from}
                                   </div>
                                 )}
+                              </div>
+                            );
+                          } else if (req.request_type === 'ownership_transfer') {
+                            const details = req.details || {};
+                            detailsContent = (
+                              <div style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
+                                <div style={{ fontWeight: 'bold', color: 'var(--accent)' }}>New Owner: {details.new_owner_name}</div>
+                                <div>Phone: {details.new_owner_phone || 'N/A'}</div>
+                                <div>Email: {details.new_owner_email || 'N/A'}</div>
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontFamily: 'monospace' }}>Pass: {details.new_owner_password}</div>
                               </div>
                             );
                           } else if (req.request_type === 'payment_report') {
@@ -1336,7 +1395,7 @@ export default function AdminDashboard({ session, onLogout }) {
                     ) : (
                       approvals.map(req => {
                         const date = new Date(req.created_at).toLocaleString();
-                        const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : 'Payment Report';
+                        const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : 'Payment Report';
                         const statusBadgeClass = req.status === 'Approved' ? 'badge-paid' : req.status === 'Rejected' ? 'badge-unpaid' : 'badge-partial';
 
                         // Render details preview
@@ -1354,6 +1413,16 @@ export default function AdminDashboard({ session, onLogout }) {
                                   Since: {details.occupancy_from}
                                 </div>
                               )}
+                            </div>
+                          );
+                        } else if (req.request_type === 'ownership_transfer') {
+                          const details = req.details || {};
+                          detailsContent = (
+                            <div style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
+                              <div><strong>New Owner:</strong> {details.new_owner_name}</div>
+                              <div><strong>Phone:</strong> {details.new_owner_phone || 'N/A'}</div>
+                              <div><strong>Email:</strong> {details.new_owner_email || 'N/A'}</div>
+                              <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontFamily: 'monospace' }}>Pass: {details.new_owner_password}</div>
                             </div>
                           );
                         } else if (req.request_type === 'payment_report') {

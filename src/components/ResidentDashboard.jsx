@@ -33,6 +33,15 @@ export default function ResidentDashboard({ session, onLogout }) {
     occupancy_from: ''
   });
 
+  // Transfer Ownership form states (Owner Only)
+  const [isTransferringOwnership, setIsTransferringOwnership] = useState(false);
+  const [transferForm, setTransferForm] = useState({
+    new_owner_name: '',
+    new_owner_phone: '',
+    new_owner_email: '',
+    new_owner_password: ''
+  });
+
   // Report Payment Form States (Owner & Tenant)
   const [paymentReport, setPaymentReport] = useState({
     billing_month: (() => {
@@ -248,6 +257,43 @@ export default function ResidentDashboard({ session, onLogout }) {
       alert('Request submitted for admin approval.');
     } catch (err) {
       alert('Error submitting request: ' + err.message);
+    }
+  };
+
+  const handleTransferOwnership = async (e) => {
+    e.preventDefault();
+    const confirmTransfer = window.confirm("Are you sure you want to transfer ownership of Flat " + flatNo + "? Once approved by admin, your access to this flat will be deactivated.");
+    if (!confirmTransfer) return;
+
+    try {
+      const { error } = await supabase
+        .from('approvals')
+        .insert([{
+          flat_no: flatNo,
+          request_type: 'ownership_transfer',
+          details: {
+            new_owner_name: transferForm.new_owner_name,
+            new_owner_phone: transferForm.new_owner_phone,
+            new_owner_email: transferForm.new_owner_email,
+            new_owner_password: transferForm.new_owner_password
+          },
+          raised_by: session.role,
+          status: 'Pending'
+        }]);
+
+      if (error) throw error;
+
+      setIsTransferringOwnership(false);
+      setTransferForm({
+        new_owner_name: '',
+        new_owner_phone: '',
+        new_owner_email: '',
+        new_owner_password: ''
+      });
+      fetchResidentData();
+      alert('Ownership transfer request submitted for admin approval.');
+    } catch (err) {
+      alert('Error submitting ownership transfer request: ' + err.message);
     }
   };
 
@@ -484,27 +530,44 @@ export default function ResidentDashboard({ session, onLogout }) {
                       <h3 style={{ fontSize: '1.1rem', color: 'var(--primary)', margin: 0 }}>
                         Flat Information
                       </h3>
-                      {session.role === 'owner' && !isEditingInfo && (
-                        <button
-                          className="btn btn-secondary"
-                          style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem' }}
-                          onClick={() => {
-                            setEditedDetails({
-                              owner_name: flatDetails.owner_name || '',
-                              phone_number: flatDetails.phone_number || '',
-                              email: flatDetails.email || '',
-                              is_vacant: flatDetails.is_vacant ?? true,
-                              is_owner_occupied: flatDetails.is_owner_occupied ?? true,
-                              tenant_name: flatDetails.tenant_name || '',
-                              tenant_phone: flatDetails.tenant_phone || '',
-                              tenant_email: flatDetails.tenant_email || '',
-                              occupancy_from: flatDetails.occupancy_from || ''
-                            });
-                            setIsEditingInfo(true);
-                          }}
-                        >
-                          Edit Details
-                        </button>
+                      {session.role === 'owner' && !isEditingInfo && !isTransferringOwnership && (
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem' }}
+                            onClick={() => {
+                              setEditedDetails({
+                                owner_name: flatDetails.owner_name || '',
+                                phone_number: flatDetails.phone_number || '',
+                                email: flatDetails.email || '',
+                                is_vacant: flatDetails.is_vacant ?? true,
+                                is_owner_occupied: flatDetails.is_owner_occupied ?? true,
+                                tenant_name: flatDetails.tenant_name || '',
+                                tenant_phone: flatDetails.tenant_phone || '',
+                                tenant_email: flatDetails.tenant_email || '',
+                                occupancy_from: flatDetails.occupancy_from || ''
+                              });
+                              setIsEditingInfo(true);
+                            }}
+                          >
+                            Edit Details
+                          </button>
+                          <button
+                            className="btn btn-danger"
+                            style={{ padding: '0.3rem 0.75rem', fontSize: '0.8rem' }}
+                            onClick={() => {
+                              setTransferForm({
+                                new_owner_name: '',
+                                new_owner_phone: '',
+                                new_owner_email: '',
+                                new_owner_password: ''
+                              });
+                              setIsTransferringOwnership(true);
+                            }}
+                          >
+                            Transfer Ownership
+                          </button>
+                        </div>
                       )}
                     </div>
 
@@ -659,6 +722,79 @@ export default function ResidentDashboard({ session, onLogout }) {
                           </button>
                           <button type="submit" className="btn btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }}>
                             Save Details
+                          </button>
+                        </div>
+                      </form>
+                    ) : isTransferringOwnership ? (
+                      <form onSubmit={handleTransferOwnership}>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: '1.4' }}>
+                          Provide details of the buyer/new owner. Once approved by the admin, ownership will be transferred, the flat occupancy will be reset to vacant, and your access credentials will be replaced.
+                        </p>
+
+                        <div className="grid-split-1-1" style={{ gap: '0.75rem', marginBottom: '1rem' }}>
+                          <div className="input-group" style={{ marginBottom: '0.5rem' }}>
+                            <label htmlFor="new-owner-name" style={{ fontSize: '0.85rem' }}>New Owner Name</label>
+                            <input
+                              id="new-owner-name"
+                              type="text"
+                              className="input-field"
+                              style={{ padding: '0.5rem' }}
+                              value={transferForm.new_owner_name}
+                              onChange={(e) => setTransferForm({ ...transferForm, new_owner_name: e.target.value })}
+                              required
+                              placeholder="Full name of buyer"
+                            />
+                          </div>
+                          <div className="input-group" style={{ marginBottom: '0.5rem' }}>
+                            <label htmlFor="new-owner-phone" style={{ fontSize: '0.85rem' }}>New Owner Phone</label>
+                            <input
+                              id="new-owner-phone"
+                              type="text"
+                              className="input-field"
+                              style={{ padding: '0.5rem' }}
+                              value={transferForm.new_owner_phone}
+                              onChange={(e) => setTransferForm({ ...transferForm, new_owner_phone: e.target.value })}
+                              required
+                              placeholder="Phone number"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid-split-1-1" style={{ gap: '0.75rem', marginBottom: '1.25rem' }}>
+                          <div className="input-group" style={{ marginBottom: '0.5rem' }}>
+                            <label htmlFor="new-owner-email" style={{ fontSize: '0.85rem' }}>New Owner Email</label>
+                            <input
+                              id="new-owner-email"
+                              type="email"
+                              className="input-field"
+                              style={{ padding: '0.5rem' }}
+                              value={transferForm.new_owner_email}
+                              onChange={(e) => setTransferForm({ ...transferForm, new_owner_email: e.target.value })}
+                              required
+                              placeholder="Email address"
+                            />
+                          </div>
+                          <div className="input-group" style={{ marginBottom: '0.5rem' }}>
+                            <label htmlFor="new-owner-password" style={{ fontSize: '0.85rem' }}>New Owner Login Password</label>
+                            <input
+                              id="new-owner-password"
+                              type="text"
+                              className="input-field"
+                              style={{ padding: '0.5rem' }}
+                              value={transferForm.new_owner_password}
+                              onChange={(e) => setTransferForm({ ...transferForm, new_owner_password: e.target.value })}
+                              required
+                              placeholder="Temporary password"
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+                          <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }} onClick={() => setIsTransferringOwnership(false)}>
+                            Cancel
+                          </button>
+                          <button type="submit" className="btn btn-danger" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }}>
+                            Submit Transfer
                           </button>
                         </div>
                       </form>
@@ -1305,7 +1441,7 @@ export default function ResidentDashboard({ session, onLogout }) {
                       ) : (
                         approvals.map(req => {
                           const date = new Date(req.created_at).toLocaleString();
-                          const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : 'Payment Report';
+                          const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : 'Payment Report';
                           const statusBadgeClass = req.status === 'Approved' ? 'badge-paid' : req.status === 'Rejected' ? 'badge-unpaid' : 'badge-partial';
                           
                           // Render nice details preview
@@ -1314,6 +1450,9 @@ export default function ResidentDashboard({ session, onLogout }) {
                             const details = req.details || {};
                             const statusStr = details.is_vacant ? 'Vacant' : (details.is_owner_occupied ? 'Owner Occupied' : 'Rented Out');
                             detailsStr = `Status: ${statusStr} | Owner: ${details.owner_name || 'N/A'}${details.tenant_name ? `, Tenant: ${details.tenant_name}` : ''}`;
+                          } else if (req.request_type === 'ownership_transfer') {
+                            const details = req.details || {};
+                            detailsStr = `New Owner: ${details.new_owner_name || 'N/A'} (Phone: ${details.new_owner_phone || 'N/A'}, Email: ${details.new_owner_email || 'N/A'})`;
                           } else if (req.request_type === 'payment_report') {
                             const details = req.details || {};
                             detailsStr = `Month: ${details.billing_month} | Paid: ₹${details.amount_paid} via ${details.payment_method}`;
