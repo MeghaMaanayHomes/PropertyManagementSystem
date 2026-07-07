@@ -127,20 +127,23 @@ h1, h2, h3, h4, h5, h6 {
   overflow-x: hidden;
   max-width: 100%;
   min-width: 0;
+  margin-left: var(--sidebar-width);
 }
 
 /* Sidebar Styling */
 .sidebar {
   width: var(--sidebar-width);
   height: 100vh;
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--glass-border);
   padding: 1.5rem;
   z-index: 50;
   flex-shrink: 0;
+  overflow-y: auto;
 }
 
 /* Inputs and Buttons */
@@ -392,14 +395,23 @@ h1, h2, h3, h4, h5, h6 {
     align-items: center;
     justify-content: space-between;
     padding: 0.85rem 1.25rem;
-    background: rgba(11, 15, 36, 0.7);
+    background: rgba(11, 15, 36, 0.92);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--glass-border);
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
+    right: 0;
     z-index: 90;
     width: 100%;
+  }
+
+  /* Push main content below the fixed mobile header */
+  .main-content {
+    margin-left: 0 !important;
+    padding: 1.25rem 1rem 1.25rem 1rem !important;
+    padding-top: calc(58px + 1.25rem) !important;
   }
 
   /* Slide-over Menu Drawer */
@@ -422,6 +434,7 @@ h1, h2, h3, h4, h5, h6 {
     display: flex !important;
     flex-direction: column !important;
     padding: 1.5rem !important;
+    margin-left: 0 !important;
   }
 
   .sidebar.open {
@@ -467,10 +480,6 @@ h1, h2, h3, h4, h5, h6 {
     width: 100% !important;
     padding: 0.75rem !important;
     font-size: 0.95rem !important;
-  }
-
-  .main-content {
-    padding: 1.25rem 1rem !important;
   }
 
   .flat-grid {
