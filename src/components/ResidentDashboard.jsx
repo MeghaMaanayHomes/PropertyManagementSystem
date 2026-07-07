@@ -17,6 +17,20 @@ export default function ResidentDashboard({ session, onLogout }) {
   const [passwordMessage, setPasswordMessage] = useState({ type: '', text: '' });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // Contacts Directory States
+  const [contacts, setContacts] = useState([]);
+  const [contactsSearch, setContactsSearch] = useState('');
+  const [showAddContactModal, setShowAddContactModal] = useState(false);
+  const [newContact, setNewContact] = useState({ name: '', phone_number: '', details: '' });
+  const [submittingContact, setSubmittingContact] = useState(false);
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setContactsSearch('');
+    setShowAddContactModal(false);
+    setIsMobileMenuOpen(false);
+  };
+
   // Edit Flat Info States (Owner Only)
   const [isEditingInfo, setIsEditingInfo] = useState(false);
   const [tenantHistory, setTenantHistory] = useState([]);
@@ -209,6 +223,17 @@ export default function ResidentDashboard({ session, onLogout }) {
       if (approvalsError) throw approvalsError;
       setApprovals(approvalsData || []);
 
+      // 8. Fetch contacts (graceful fallback)
+      try {
+        const { data: contactsData, error: contactsError } = await supabase
+          .from('contacts')
+          .select('*')
+          .order('name', { ascending: true });
+        if (contactsError) throw contactsError;
+        setContacts(contactsData || []);
+      } catch (cErr) {
+        console.warn('Could not load contacts directory:', cErr.message);
+      }
     } catch (err) {
       console.error('Error fetching resident data:', err);
     } finally {
@@ -236,6 +261,29 @@ export default function ResidentDashboard({ session, onLogout }) {
       alert('Error submitting complaint: ' + err.message);
     } finally {
       setSubmittingComplaint(false);
+    }
+  };
+
+  const handleCreateContact = async (e) => {
+    e.preventDefault();
+    if (!newContact.name || !newContact.phone_number) {
+      alert('Name and Phone Number are required!');
+      return;
+    }
+    setSubmittingContact(true);
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .insert([newContact]);
+
+      if (error) throw error;
+      setNewContact({ name: '', phone_number: '', details: '' });
+      setShowAddContactModal(false);
+      fetchResidentData();
+    } catch (err) {
+      alert('Error adding contact: ' + err.message);
+    } finally {
+      setSubmittingContact(false);
     }
   };
 
@@ -452,9 +500,16 @@ export default function ResidentDashboard({ session, onLogout }) {
     <div className="app-container">
       {/* Mobile Top Header */}
       <header className="mobile-header">
-        <h2 style={{ fontSize: '1.15rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-          <span style={{ color: 'var(--primary)', fontWeight: '800' }}>Flat {flatNo}</span>
-        </h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <img 
+            src="/building_header.png" 
+            alt="Building Outline" 
+            style={{ height: '28px', width: 'auto' }} 
+          />
+          <h2 style={{ fontSize: '1.15rem', color: '#fff', margin: 0, fontWeight: '600' }}>
+            Flat {flatNo}
+          </h2>
+        </div>
         <button
           onClick={() => setIsMobileMenuOpen(true)}
           className="btn btn-secondary"
@@ -488,16 +543,23 @@ export default function ResidentDashboard({ session, onLogout }) {
           </button>
         </div>
 
-        <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.25rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ color: 'var(--primary)', fontWeight: '800' }}>Flat {flatNo}</span>
-          </h2>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Resident Portal</p>
+        <div style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <img 
+            src="/building_header.png" 
+            alt="Building Outline" 
+            style={{ height: '36px', width: 'auto' }} 
+          />
+          <div>
+            <h2 style={{ fontSize: '1.25rem', color: '#fff', margin: 0, fontWeight: '600' }}>
+              Flat {flatNo}
+            </h2>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>Portal</p>
+          </div>
         </div>
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <button
-            onClick={() => { setActiveTab('overview'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('overview')}
             className={`btn ${activeTab === 'overview' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -508,7 +570,7 @@ export default function ResidentDashboard({ session, onLogout }) {
             My Flat
           </button>
           <button
-            onClick={() => { setActiveTab('map'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('map')}
             className={`btn ${activeTab === 'map' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -521,7 +583,7 @@ export default function ResidentDashboard({ session, onLogout }) {
             Flats
           </button>
           <button
-            onClick={() => { setActiveTab('payments'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('payments')}
             className={`btn ${activeTab === 'payments' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -531,7 +593,7 @@ export default function ResidentDashboard({ session, onLogout }) {
             Payments
           </button>
           <button
-            onClick={() => { setActiveTab('notices'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('notices')}
             className={`btn ${activeTab === 'notices' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -547,7 +609,7 @@ export default function ResidentDashboard({ session, onLogout }) {
             )}
           </button>
           <button
-            onClick={() => { setActiveTab('complaints'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('complaints')}
             className={`btn ${activeTab === 'complaints' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -557,7 +619,7 @@ export default function ResidentDashboard({ session, onLogout }) {
             Complaints
           </button>
           <button
-            onClick={() => { setActiveTab('approvals'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('approvals')}
             className={`btn ${activeTab === 'approvals' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -567,7 +629,17 @@ export default function ResidentDashboard({ session, onLogout }) {
             Approvals
           </button>
           <button
-            onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('contacts')}
+            className={`btn ${activeTab === 'contacts' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
+          >
+            <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+            </svg>
+            Contacts Directory
+          </button>
+          <button
+            onClick={() => handleTabChange('settings')}
             className={`btn ${activeTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -1624,6 +1696,185 @@ export default function ResidentDashboard({ session, onLogout }) {
                     </form>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* CONTACTS TAB */}
+            {activeTab === 'contacts' && (
+              <div>
+                <div className="flex-between mb-4" style={{ flexWrap: 'wrap', gap: '1rem' }}>
+                  <div>
+                    <h1 style={{ fontSize: '1.75rem' }}>Contacts Directory</h1>
+                    <p style={{ color: 'var(--text-secondary)' }}>Emergency and helpful services contacts for all residents</p>
+                  </div>
+                  <button
+                    onClick={() => setShowAddContactModal(true)}
+                    className="btn btn-primary"
+                    style={{ padding: '0.6rem 1.25rem', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                  >
+                    <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Add Contact
+                  </button>
+                </div>
+
+                {/* Search Bar */}
+                <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1.5rem' }}>
+                  <div style={{ position: 'relative', width: '100%' }}>
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}
+                    >
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search contacts by name or description..."
+                      className="input-field"
+                      value={contactsSearch}
+                      onChange={(e) => setContactsSearch(e.target.value)}
+                      style={{ width: '100%', paddingLeft: '2.75rem' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Contacts Grid */}
+                {(() => {
+                  const filteredContacts = contacts.filter(contact => {
+                    const q = contactsSearch.toLowerCase();
+                    return (
+                      contact.name?.toLowerCase().includes(q) ||
+                      contact.details?.toLowerCase().includes(q) ||
+                      contact.phone_number?.includes(q)
+                    );
+                  });
+
+                  if (filteredContacts.length === 0) {
+                    return (
+                      <div className="glass-panel" style={{ padding: '4rem 2rem', textAlign: 'center' }}>
+                        <svg width="48" height="48" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" viewBox="0 0 24 24" style={{ marginBottom: '1rem' }}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.109A11.386 11.386 0 0110.089 20c-2.213 0-4.3-.63-6.089-1.73v-.109A9.03 9.03 0 0110 11.213c3.08 0 5.78 1.54 7.42 3.89M13.616 10.12a3 3 0 11-4.832 0c.955-.683 2.112-.683 3.068 0zM21 12a3 3 0 11-5.83 0c.71-.52 1.58-.52 2.29 0z" />
+                        </svg>
+                        <h3 style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>No contacts found</h3>
+                        <p style={{ color: 'var(--text-secondary)' }}>Try modifying your search query or add a new contact.</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.25rem' }}>
+                      {filteredContacts.map(c => (
+                        <div key={c.id} className="glass-panel glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', position: 'relative' }}>
+                          <h3 style={{ fontSize: '1.15rem', fontWeight: '600', margin: 0, color: 'var(--text-primary)' }}>{c.name}</h3>
+                          
+                          <a
+                            href={`tel:${c.phone_number}`}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', color: 'var(--secondary)', textDecoration: 'none', fontWeight: '600', fontSize: '1rem', width: 'fit-content' }}
+                          >
+                            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                            </svg>
+                            {c.phone_number}
+                          </a>
+
+                          {c.details && (
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0, whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>
+                              {c.details}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                {/* Add Contact Modal */}
+                {showAddContactModal && (
+                  <div className="modal-overlay flex-center" style={{ zIndex: 1000 }}>
+                    <div className="glass-panel" style={{ width: '90%', maxWidth: '480px', padding: '2rem', position: 'relative' }}>
+                      <button
+                        onClick={() => setShowAddContactModal(false)}
+                        style={{ position: 'absolute', top: '1.25rem', right: '1.25rem', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '0.25rem' }}
+                      >
+                        <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                      </button>
+
+                      <h2 style={{ marginBottom: '1.5rem', fontSize: '1.4rem' }}>Add New Contact</h2>
+
+                      <form onSubmit={handleCreateContact} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                        <div className="input-group">
+                          <label htmlFor="contact-name">Name / Service Name</label>
+                          <input
+                            id="contact-name"
+                            type="text"
+                            className="input-field"
+                            value={newContact.name}
+                            onChange={(e) => setNewContact({ ...newContact, name: e.target.value })}
+                            required
+                            placeholder="e.g. Plumber Rajesh, Fire Emergency"
+                          />
+                        </div>
+
+                        <div className="input-group">
+                          <label htmlFor="contact-phone">Phone Number</label>
+                          <input
+                            id="contact-phone"
+                            type="tel"
+                            className="input-field"
+                            value={newContact.phone_number}
+                            onChange={(e) => setNewContact({ ...newContact, phone_number: e.target.value })}
+                            required
+                            placeholder="e.g. +91 98765 43210"
+                          />
+                        </div>
+
+                        <div className="input-group">
+                          <label htmlFor="contact-details">Details / Description</label>
+                          <textarea
+                            id="contact-details"
+                            className="input-field"
+                            value={newContact.details}
+                            onChange={(e) => setNewContact({ ...newContact, details: e.target.value })}
+                            placeholder="e.g. Available 24/7 for plumbing issues in Block A & B"
+                            style={{ minHeight: '80px', resize: 'vertical' }}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => setShowAddContactModal(false)}
+                            style={{ padding: '0.6rem 1.25rem' }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="btn btn-primary"
+                            disabled={submittingContact}
+                            style={{ padding: '0.6rem 1.5rem' }}
+                          >
+                            {submittingContact ? 'Adding...' : 'Add Contact'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

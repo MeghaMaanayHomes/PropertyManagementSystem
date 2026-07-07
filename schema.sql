@@ -176,3 +176,17 @@ CREATE POLICY "Allow public uploads" ON storage.objects
 CREATE POLICY "Allow public reads" ON storage.objects
   FOR SELECT TO anon, authenticated
   USING (bucket_id = 'payment-attachments');
+
+
+-- 13. Create contacts table (emergency/apartment contacts directory)
+CREATE TABLE IF NOT EXISTS public.contacts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    phone_number TEXT NOT NULL,
+    details TEXT DEFAULT '',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Disable Row Level Security (RLS) for contacts
+ALTER TABLE public.contacts DISABLE ROW LEVEL SECURITY;
+

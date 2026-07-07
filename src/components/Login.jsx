@@ -74,7 +74,16 @@ export default function Login({ onLoginSuccess }) {
   return (
     <div className="flex-center" style={{ minHeight: '100vh', padding: '1rem', width: '100%' }}>
       <div className="glass-panel glow-primary" style={{ width: '100%', maxWidth: '420px', padding: '2.5rem 2rem' }}>
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+        <div style={{ textAlign: 'center', marginBottom: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <img 
+            src="/logo.png" 
+            alt="Megha Maanay Homes Logo" 
+            style={{ 
+              maxHeight: '130px', 
+              width: 'auto', 
+              marginBottom: '1.25rem'
+            }} 
+          />
           <h1 style={{ fontSize: '2rem', background: 'linear-gradient(to right, #6366f1, #14b8a6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '0.25rem' }}>
             Megha Maanay Homes
           </h1>
