@@ -1218,15 +1218,15 @@ export default function AdminDashboard({ session, onLogout }) {
                     <h1 style={{ fontSize: '1.75rem' }}>Dashboard Overview</h1>
                     <p style={{ color: 'var(--text-secondary)' }}>Key performance indicators for Megha Maanay Homes</p>
                   </div>
-                  <div className="flex-center gap-2">
-                    <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }} htmlFor="month-select">Billing Month:</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', width: '100%', maxWidth: '320px' }}>
+                    <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }} htmlFor="month-select">Billing Month:</label>
                     <input
                       id="month-select"
                       type="month"
                       className="input-field"
                       value={selectedMonth}
                       onChange={(e) => setSelectedMonth(e.target.value)}
-                      style={{ padding: '0.5rem' }}
+                      style={{ padding: '0.5rem', flex: 1 }}
                     />
                   </div>
                 </div>
@@ -1264,48 +1264,35 @@ export default function AdminDashboard({ session, onLogout }) {
                 {/* Main Overview Dashboard Split */}
                 <div className="grid-split-2-1">
                   {/* Recent Activity / Quick Status */}
-                  <div className="glass-panel" style={{ padding: '1.5rem' }}>
+                  <div className="glass-panel" style={{ padding: '1.5rem', minWidth: 0 }}>
                     <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Active Maintenance Dues Overview</h3>
-                    <div style={{ maxHeight: '350px', overflowY: 'auto', overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '500px' }}>
-                        <thead>
-                          <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                            <th style={{ padding: '0.75rem 0.5rem' }}>Flat No</th>
-                            <th style={{ padding: '0.75rem 0.5rem' }}>Resident</th>
-                            <th style={{ padding: '0.75rem 0.5rem' }}>Status</th>
-                            <th style={{ padding: '0.75rem 0.5rem' }}>Paid</th>
-                            <th style={{ padding: '0.75rem 0.5rem' }}>Outstanding</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {flats.slice(0, 8).map(flat => {
-                            const record = maintenanceRecords.find(r => r.flat_no === flat.flat_no);
-                            const paid = record ? record.amount_paid : 0;
-                            const status = record ? record.payment_status : 'Unpaid';
-                            const due = record ? record.amount_due : maintenanceAmount;
-                            const outstanding = Math.max(0, due - paid);
-                            const name = flat.is_vacant 
-                              ? 'Vacant' 
-                              : (flat.is_owner_occupied 
-                                  ? (flat.owner_name ? `Owner: ${flat.owner_name}` : 'Owner Occupied') 
-                                  : (flat.tenant_name ? `Tenant: ${flat.tenant_name}` : 'Rented Out'));
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '380px', overflowY: 'auto', paddingRight: '0.25rem' }}>
+                      {flats.slice(0, 8).map(flat => {
+                        const record = maintenanceRecords.find(r => r.flat_no === flat.flat_no);
+                        const paid = record ? record.amount_paid : 0;
+                        const status = record ? record.payment_status : 'Unpaid';
+                        const due = record ? record.amount_due : maintenanceAmount;
+                        const outstanding = Math.max(0, due - paid);
+                        const name = flat.is_vacant
+                          ? 'Vacant'
+                          : (flat.is_owner_occupied
+                              ? (flat.owner_name || 'Owner')
+                              : (flat.tenant_name || 'Tenant'));
+                        const badgeClass = status === 'Paid' ? 'badge-paid' : status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid';
 
-                            return (
-                              <tr key={flat.flat_no} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
-                                <td style={{ padding: '0.75rem 0.5rem', fontWeight: '600' }}>{flat.flat_no}</td>
-                                <td style={{ padding: '0.75rem 0.5rem', color: flat.is_vacant ? 'var(--text-muted)' : 'var(--text-primary)' }}>{name}</td>
-                                <td style={{ padding: '0.75rem 0.5rem' }}>
-                                  <span className={`badge ${status === 'Paid' ? 'badge-paid' : status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`}>
-                                    {status}
-                                  </span>
-                                </td>
-                                <td style={{ padding: '0.75rem 0.5rem' }}>₹{paid}</td>
-                                <td style={{ padding: '0.75rem 0.5rem', color: outstanding > 0 ? 'var(--accent)' : 'var(--success)' }}>₹{outstanding}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                        return (
+                          <div key={flat.flat_no} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                              <span style={{ fontWeight: '700', fontSize: '0.88rem', color: 'var(--text-primary)', flexShrink: 0 }}>{flat.flat_no}</span>
+                              <span style={{ fontSize: '0.82rem', color: flat.is_vacant ? 'var(--text-muted)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                              <span className={`badge ${badgeClass}`} style={{ fontSize: '0.65rem', padding: '2px 7px' }}>{status}</span>
+                              <span style={{ fontWeight: '600', fontSize: '0.85rem', color: outstanding > 0 ? 'var(--accent)' : 'var(--success)', minWidth: '3.5rem', textAlign: 'right' }}>₹{outstanding}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                     <div style={{ marginTop: '1rem', textAlign: 'right' }}>
                       <button className="btn btn-secondary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }} onClick={() => handleTabChange('ledger')}>
@@ -1419,15 +1406,15 @@ export default function AdminDashboard({ session, onLogout }) {
                     <h1 style={{ fontSize: '1.75rem' }}>Maintenance Ledger</h1>
                     <p style={{ color: 'var(--text-secondary)' }}>Record and manage monthly payments for all flats</p>
                   </div>
-                  <div className="flex-center gap-2">
-                    <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }} htmlFor="ledger-month-select">Select Month:</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', width: '100%', maxWidth: '320px' }}>
+                    <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }} htmlFor="ledger-month-select">Select Month:</label>
                     <input
                       id="ledger-month-select"
                       type="month"
                       className="input-field"
                       value={selectedMonth}
                       onChange={(e) => setSelectedMonth(e.target.value)}
-                      style={{ padding: '0.5rem' }}
+                      style={{ padding: '0.5rem', flex: 1 }}
                     />
                   </div>
                 </div>
@@ -1443,7 +1430,7 @@ export default function AdminDashboard({ session, onLogout }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
                   {/* Top Row: Search input */}
                   <div style={{ display: 'flex', gap: '1rem', width: '100%', flexWrap: 'wrap' }}>
-                    <div style={{ position: 'relative', flex: 1, minWidth: '280px' }}>
+                    <div style={{ position: 'relative', flex: 1, minWidth: '0' }}>
                       <svg
                         width="18"
                         height="18"
@@ -1470,8 +1457,8 @@ export default function AdminDashboard({ session, onLogout }) {
                   </div>
 
                   {/* Second Row: Actions, Sorting and Showing count */}
-                  <div className="flex-between" style={{ flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div className="flex-between ledger-controls-row" style={{ flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                       {/* FILTERS toggle button */}
                       <button
                         type="button"
@@ -1486,7 +1473,7 @@ export default function AdminDashboard({ session, onLogout }) {
                       </button>
 
                       {/* SORT Label & Select */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>SORT</span>
                         <select
                           className="input-field"
@@ -1664,39 +1651,39 @@ export default function AdminDashboard({ session, onLogout }) {
                 </div>
 
                 {/* Mobile View: Cards */}
-                <div className="mobile-only" style={{ marginTop: '1rem' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div className="mobile-only" style={{ marginTop: '1rem', gap: '0.75rem' }}>
                     {paginatedRecords.length === 0 ? (
                       <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                         No maintenance records found. Try modifying your search or filters.
                       </div>
                     ) : (
                       paginatedRecords.map(({ flat, record, flat_no, paid, due, status, method, date, occupantLabel }) => {
+                        const badgeClass = status === 'Paid' ? 'badge-paid' : status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid';
                         return (
-                          <div key={flat_no} className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                            <div className="flex-between">
-                              <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Flat {flat_no}</span>
-                              <span className={`badge ${status === 'Paid' ? 'badge-paid' : status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`}>
-                                {status}
-                              </span>
+                          <div key={flat_no} className="glass-panel" style={{ padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                            {/* Header */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-primary)' }}>Flat {flat_no}</span>
+                              <span className={`badge ${badgeClass}`}>{status}</span>
                             </div>
-                            
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem 1rem', fontSize: '0.85rem', color: 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '0.75rem' }}>
-                              <div>
-                                <strong style={{ color: 'var(--text-primary)' }}>Occupant:</strong><br/>
-                                {occupantLabel}
+
+                            {/* Info rows */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', fontSize: '0.875rem', paddingBottom: '0.6rem', borderBottom: '1px solid var(--glass-border)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Occupant</span>
+                                <span style={{ color: 'var(--text-secondary)', fontWeight: '500', textAlign: 'right', maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{occupantLabel}</span>
                               </div>
-                              <div>
-                                <strong style={{ color: 'var(--text-primary)' }}>Amount Paid/Due:</strong><br/>
-                                ₹{paid} / ₹{due}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Paid / Due</span>
+                                <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>₹{paid} <span style={{ color: 'var(--text-muted)', fontWeight: '400' }}>/ ₹{due}</span></span>
                               </div>
-                              <div>
-                                <strong style={{ color: 'var(--text-primary)' }}>Payment Date:</strong><br/>
-                                {date}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Date</span>
+                                <span style={{ color: 'var(--text-secondary)' }}>{date}</span>
                               </div>
-                              <div>
-                                <strong style={{ color: 'var(--text-primary)' }}>Method:</strong><br/>
-                                {method}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Method</span>
+                                <span style={{ color: 'var(--text-secondary)' }}>{method}</span>
                               </div>
                             </div>
 
@@ -1720,7 +1707,6 @@ export default function AdminDashboard({ session, onLogout }) {
                         );
                       })
                     )}
-                  </div>
                 </div>
 
                 {/* Pagination Controls */}
@@ -1763,7 +1749,7 @@ export default function AdminDashboard({ session, onLogout }) {
 
                 {/* Desktop View: Table */}
                 <div className="glass-panel desktop-only" style={{ padding: '1.5rem', overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '680px' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
                         <th style={{ padding: '1rem 0.75rem' }}>Flat</th>
@@ -1904,8 +1890,7 @@ export default function AdminDashboard({ session, onLogout }) {
                 </div>
 
                 {/* Mobile View: Cards */}
-                <div className="mobile-only" style={{ marginTop: '1rem' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div className="mobile-only" style={{ marginTop: '1rem', gap: '0.75rem' }}>
                     {approvals.length === 0 ? (
                       <div className="glass-panel flex-center" style={{ padding: '2rem', color: 'var(--text-muted)' }}>
                         No approval requests found.
@@ -1916,118 +1901,122 @@ export default function AdminDashboard({ session, onLogout }) {
                         const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : 'Payment Report';
                         const statusBadgeClass = req.status === 'Approved' ? 'badge-paid' : req.status === 'Rejected' ? 'badge-unpaid' : 'badge-partial';
 
-                        // Render details preview
-                        let detailsContent = null;
+                        // Build detail rows as key-value pairs
+                        let detailRows = [];
                         if (req.request_type === 'occupancy_change') {
-                          const details = req.details || {};
-                          const statusStr = details.is_vacant ? 'Vacant' : (details.is_owner_occupied ? 'Owner Occupied' : 'Rented Out');
-                          detailsContent = (
-                            <div style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
-                              <div><strong>Status:</strong> {statusStr}</div>
-                              <div><strong>Owner:</strong> {details.owner_name} ({details.phone_number || 'No Phone'})</div>
-                              {!details.is_vacant && !details.is_owner_occupied && (
-                                <div style={{ borderLeft: '2px solid var(--glass-border)', paddingLeft: '0.5rem', marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
-                                  Tenant: {details.tenant_name} ({details.tenant_phone})<br/>
-                                  Since: {details.occupancy_from}
-                                </div>
-                              )}
-                            </div>
-                          );
+                          const d = req.details || {};
+                          const statusStr = d.is_vacant ? 'Vacant' : (d.is_owner_occupied ? 'Owner Occupied' : 'Rented Out');
+                          detailRows = [
+                            { label: 'New Status', value: statusStr },
+                            { label: 'Owner', value: `${d.owner_name || '—'} ${d.phone_number ? `· ${d.phone_number}` : ''}` },
+                            ...(!d.is_vacant && !d.is_owner_occupied ? [
+                              { label: 'Tenant', value: `${d.tenant_name || '—'} · ${d.tenant_phone || '—'}` },
+                              { label: 'Since', value: d.occupancy_from || '—' },
+                            ] : []),
+                          ];
                         } else if (req.request_type === 'ownership_transfer') {
-                          const details = req.details || {};
-                          detailsContent = (
-                            <div style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
-                              <div><strong>New Owner:</strong> {details.new_owner_name}</div>
-                              <div><strong>Phone:</strong> {details.new_owner_phone || 'N/A'}</div>
-                              <div><strong>Email:</strong> {details.new_owner_email || 'N/A'}</div>
-                              <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontFamily: 'monospace' }}>Pass: {details.new_owner_password}</div>
-                            </div>
-                          );
+                          const d = req.details || {};
+                          detailRows = [
+                            { label: 'New Owner', value: d.new_owner_name || '—' },
+                            { label: 'Phone', value: d.new_owner_phone || 'N/A' },
+                            { label: 'Email', value: d.new_owner_email || 'N/A' },
+                          ];
                         } else if (req.request_type === 'payment_report') {
-                          const details = req.details || {};
-                          detailsContent = (
-                            <div style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
-                              <div><strong>Month:</strong> {details.billing_month}</div>
-                              <div><strong>Paid:</strong> <strong>₹{details.amount_paid}</strong> via {details.payment_method}</div>
-                              <div style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: '0.75rem' }}>Txn: {details.transaction_id || 'N/A'}</div>
-                              {details.attachment_url && (
-                                <div style={{ marginTop: '0.75rem' }}>
-                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.35rem', fontWeight: '600' }}>📎 Payment Proof</div>
-                                  <a href={details.attachment_url} target="_blank" rel="noopener noreferrer">
-                                    <img src={details.attachment_url} alt="Payment proof"
-                                      style={{ maxHeight: '130px', maxWidth: '100%', borderRadius: '8px', objectFit: 'contain', border: '1px solid var(--glass-border)', display: 'block' }}
+                          const d = req.details || {};
+                          detailRows = [
+                            { label: 'Month', value: d.billing_month || '—' },
+                            { label: 'Amount Paid', value: `₹${d.amount_paid} via ${d.payment_method || '—'}` },
+                            { label: 'Txn ID', value: d.transaction_id || 'N/A' },
+                          ];
+                        }
+
+                        return (
+                          <div key={req.id} className="glass-panel" style={{ padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+
+                            {/* Header */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ fontWeight: '700', fontSize: '1rem' }}>Flat {req.flat_no}</span>
+                              <span className={`badge ${statusBadgeClass}`}>{req.status}</span>
+                            </div>
+
+                            {/* Meta rows */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.85rem', paddingBottom: '0.6rem', borderBottom: '1px solid var(--glass-border)' }}>
+                              {[
+                                { label: 'Type', value: typeLabel },
+                                { label: 'Raised by', value: req.raised_by },
+                                { label: 'Date', value: date },
+                              ].map(({ label, value }) => (
+                                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem' }}>
+                                  <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{label}</span>
+                                  <span style={{ color: 'var(--text-secondary)', textAlign: 'right', textTransform: label === 'Raised by' ? 'capitalize' : 'none' }}>{value}</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Detail rows */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.85rem', paddingBottom: '0.6rem', borderBottom: '1px solid var(--glass-border)' }}>
+                              {detailRows.map(({ label, value }) => (
+                                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem' }}>
+                                  <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{label}</span>
+                                  <span style={{ color: 'var(--text-primary)', fontWeight: '500', textAlign: 'right' }}>{value}</span>
+                                </div>
+                              ))}
+                              {req.request_type === 'payment_report' && req.details?.attachment_url && (
+                                <div style={{ marginTop: '0.4rem' }}>
+                                  <a href={req.details.attachment_url} target="_blank" rel="noopener noreferrer">
+                                    <img src={req.details.attachment_url} alt="Payment proof"
+                                      style={{ maxHeight: '110px', maxWidth: '100%', borderRadius: '8px', objectFit: 'contain', border: '1px solid var(--glass-border)', display: 'block' }}
                                       onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'inline'; }}
                                     />
-                                    <span style={{ display: 'none', fontSize: '0.8rem', color: 'var(--primary)', textDecoration: 'underline' }}>📎 View Attachment</span>
+                                    <span style={{ display: 'none', fontSize: '0.8rem', color: 'var(--primary)' }}>📎 View Attachment</span>
                                   </a>
                                 </div>
                               )}
                             </div>
-                          );
-                        }
 
-                        return (
-                          <div key={req.id} className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                            <div className="flex-between">
-                              <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Flat {req.flat_no}</span>
-                              <span className={`badge ${statusBadgeClass}`}>{req.status}</span>
-                            </div>
-
-                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                              <div><strong>Date Raised:</strong> {date}</div>
-                              <div><strong>Type:</strong> {typeLabel}</div>
-                              <div><strong>Raised By:</strong> <span style={{ textTransform: 'capitalize' }}>{req.raised_by}</span></div>
-                            </div>
-
-                            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-                              {detailsContent}
-                            </div>
-
-                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
-                              {req.status === 'Pending' ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                  <input
-                                    type="text"
-                                    className="input-field"
-                                    placeholder="Admin comments/feedback..."
-                                    style={{ padding: '0.4rem', fontSize: '0.8rem', width: '100%' }}
-                                    id={`comment-mobile-${req.id}`}
-                                  />
-                                  <div style={{ display: 'flex', gap: '0.4rem' }}>
-                                    <button
-                                      className="btn btn-primary"
-                                      style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', flex: 1 }}
-                                      onClick={() => {
-                                        const commentVal = document.getElementById(`comment-mobile-${req.id}`)?.value || '';
-                                        handleAcceptRequest(req, commentVal);
-                                      }}
-                                    >
-                                      Approve
-                                    </button>
-                                    <button
-                                      className="btn btn-danger"
-                                      style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', flex: 1 }}
-                                      onClick={() => {
-                                        const commentVal = document.getElementById(`comment-mobile-${req.id}`)?.value || '';
-                                        handleRejectRequest(req.id, commentVal);
-                                      }}
-                                    >
-                                      Reject
-                                    </button>
-                                  </div>
+                            {/* Action */}
+                            {req.status === 'Pending' ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                <input
+                                  type="text"
+                                  className="input-field"
+                                  placeholder="Admin comments (optional)..."
+                                  style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', width: '100%' }}
+                                  id={`comment-mobile-${req.id}`}
+                                />
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                  <button
+                                    className="btn btn-primary"
+                                    style={{ flex: 1, padding: '0.5rem', fontSize: '0.875rem' }}
+                                    onClick={() => {
+                                      const commentVal = document.getElementById(`comment-mobile-${req.id}`)?.value || '';
+                                      handleAcceptRequest(req, commentVal);
+                                    }}
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    className="btn btn-danger"
+                                    style={{ flex: 1, padding: '0.5rem', fontSize: '0.875rem' }}
+                                    onClick={() => {
+                                      const commentVal = document.getElementById(`comment-mobile-${req.id}`)?.value || '';
+                                      handleRejectRequest(req.id, commentVal);
+                                    }}
+                                  >
+                                    Reject
+                                  </button>
                                 </div>
-                              ) : (
-                                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                  <strong>Admin Comments:</strong><br/>
-                                  {req.admin_comments || 'No comments left.'}
-                                </div>
-                              )}
-                            </div>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>Admin notes</span>
+                                <span style={{ color: 'var(--text-secondary)', textAlign: 'right' }}>{req.admin_comments || '—'}</span>
+                              </div>
+                            )}
                           </div>
                         );
                       })
                     )}
-                  </div>
                 </div>
               </div>
             )}
@@ -2035,7 +2024,7 @@ export default function AdminDashboard({ session, onLogout }) {
             {/* ANNOUNCEMENTS TAB */}
             {activeTab === 'notices' && (
               <div>
-                <div className="flex-between mb-4">
+                <div className="flex-between mb-4" style={{ flexWrap: 'wrap', gap: '1rem' }}>
                   <div>
                     <h1 style={{ fontSize: '1.75rem' }}>Notice Board</h1>
                     <p style={{ color: 'var(--text-secondary)' }}>Post announcements and updates for all apartment residents</p>
@@ -2043,6 +2032,7 @@ export default function AdminDashboard({ session, onLogout }) {
                   <button
                     className="btn btn-primary"
                     onClick={() => setShowNoticeModal(true)}
+                    style={{ whiteSpace: 'nowrap' }}
                   >
                     + Post Announcement
                   </button>
@@ -2089,48 +2079,82 @@ export default function AdminDashboard({ session, onLogout }) {
                   <p style={{ color: 'var(--text-secondary)' }}>Manage and resolve service requests raised by residents</p>
                 </div>
 
-                <div className="glass-panel" style={{ padding: '1rem', overflowX: 'auto' }}>
-                  {complaints.length === 0 ? (
-                    <div className="flex-center" style={{ padding: '3rem', color: 'var(--text-muted)' }}>
-                      No complaints submitted yet.
-                    </div>
-                  ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                          <th style={{ padding: '1rem 0.75rem' }}>Flat</th>
-                          <th style={{ padding: '1rem 0.75rem' }}>Title</th>
-                          <th style={{ padding: '1rem 0.75rem' }}>Date</th>
-                          <th style={{ padding: '1rem 0.75rem' }}>Status</th>
-                          <th style={{ padding: '1rem 0.75rem', textAlign: 'right' }}>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {complaints.map(item => (
-                          <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
-                            <td style={{ padding: '1rem 0.75rem', fontWeight: 'bold' }}>Flat {item.flat_no}</td>
-                            <td style={{ padding: '1rem 0.75rem' }}>{item.title}</td>
-                            <td style={{ padding: '1rem 0.75rem' }}>{new Date(item.created_at).toLocaleDateString()}</td>
-                            <td style={{ padding: '1rem 0.75rem' }}>
-                              <span className={`badge ${item.status === 'Resolved' ? 'badge-paid' : item.status === 'In Progress' ? 'badge-partial' : 'badge-unpaid'}`}>
-                                {item.status}
-                              </span>
-                            </td>
-                            <td style={{ padding: '1rem 0.75rem', textAlign: 'right' }}>
-                              <button
-                                className="btn btn-secondary"
-                                style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
-                                onClick={() => setSelectedComplaint(item)}
-                              >
-                                View Details
-                              </button>
-                            </td>
+                {complaints.length === 0 ? (
+                  <div className="glass-panel flex-center" style={{ padding: '3rem', color: 'var(--text-muted)' }}>
+                    No complaints submitted yet.
+                  </div>
+                ) : (
+                  <>
+                    {/* Desktop View: Table */}
+                    <div className="glass-panel desktop-only" style={{ padding: '1rem', overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '560px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                            <th style={{ padding: '1rem 0.75rem' }}>Flat</th>
+                            <th style={{ padding: '1rem 0.75rem' }}>Title</th>
+                            <th style={{ padding: '1rem 0.75rem' }}>Date</th>
+                            <th style={{ padding: '1rem 0.75rem' }}>Status</th>
+                            <th style={{ padding: '1rem 0.75rem', textAlign: 'right' }}>Action</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
+                        </thead>
+                        <tbody>
+                          {complaints.map(item => (
+                            <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
+                              <td style={{ padding: '1rem 0.75rem', fontWeight: 'bold' }}>Flat {item.flat_no}</td>
+                              <td style={{ padding: '1rem 0.75rem' }}>{item.title}</td>
+                              <td style={{ padding: '1rem 0.75rem' }}>{new Date(item.created_at).toLocaleDateString()}</td>
+                              <td style={{ padding: '1rem 0.75rem' }}>
+                                <span className={`badge ${item.status === 'Resolved' ? 'badge-paid' : item.status === 'In Progress' ? 'badge-partial' : 'badge-unpaid'}`}>
+                                  {item.status}
+                                </span>
+                              </td>
+                              <td style={{ padding: '1rem 0.75rem', textAlign: 'right' }}>
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                                  onClick={() => setSelectedComplaint(item)}
+                                >
+                                  View Details
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile View: Cards */}
+                    <div className="mobile-only" style={{ flexDirection: 'column', gap: '0.75rem' }}>
+                      {complaints.map(item => (
+                        <div key={item.id} className="glass-panel" style={{ padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', width: '100%' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontWeight: '700', fontSize: '1rem' }}>Flat {item.flat_no}</span>
+                            <span className={`badge ${item.status === 'Resolved' ? 'badge-paid' : item.status === 'In Progress' ? 'badge-partial' : 'badge-unpaid'}`}>
+                              {item.status}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.875rem', paddingBottom: '0.6rem', borderBottom: '1px solid var(--glass-border)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem' }}>
+                              <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>Title</span>
+                              <span style={{ color: 'var(--text-primary)', fontWeight: '500', textAlign: 'right' }}>{item.title}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem' }}>
+                              <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>Date</span>
+                              <span style={{ color: 'var(--text-secondary)' }}>{new Date(item.created_at).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }}
+                            onClick={() => setSelectedComplaint(item)}
+                          >
+                            View Details
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
