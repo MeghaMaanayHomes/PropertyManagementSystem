@@ -97,56 +97,38 @@ export default function AdminDashboard({ session, onLogout }) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch flats
-      const { data: flatsData, error: flatsError } = await supabase
-        .from('flats')
-        .select('*')
-        .order('flat_no', { ascending: true });
+      // Fire all independent queries in parallel
+      const [
+        { data: flatsData,       error: flatsError },
+        { data: recordsData,     error: recordsError },
+        { data: noticesData,     error: noticesError },
+        { data: complaintsData,  error: complaintsError },
+        { data: approvalsData,   error: approvalsError },
+        { data: settingsData,    error: settingsError },
+        contactsResult,
+      ] = await Promise.all([
+        supabase.from('flats').select('*').order('flat_no', { ascending: true }),
+        supabase.from('maintenance_records').select('*').eq('billing_month', selectedMonth),
+        supabase.from('announcements').select('*').order('created_at', { ascending: false }),
+        supabase.from('complaints').select('*').order('created_at', { ascending: false }),
+        supabase.from('approvals').select('*').order('created_at', { ascending: false }),
+        supabase.from('settings').select('*'),
+        supabase.from('contacts').select('*').order('name', { ascending: true }).then(r => r).catch(() => ({ data: [], error: null })),
+      ]);
 
       if (flatsError) throw flatsError;
-      setFlats(flatsData || []);
-
-      // 2. Fetch maintenance records for selected month
-      const { data: recordsData, error: recordsError } = await supabase
-        .from('maintenance_records')
-        .select('*')
-        .eq('billing_month', selectedMonth);
-
       if (recordsError) throw recordsError;
-      setMaintenanceRecords(recordsData || []);
-
-      // 3. Fetch announcements
-      const { data: noticesData, error: noticesError } = await supabase
-        .from('announcements')
-        .select('*')
-        .order('created_at', { ascending: false });
-
       if (noticesError) throw noticesError;
-      setAnnouncements(noticesData || []);
-
-      // 4. Fetch complaints
-      const { data: complaintsData, error: complaintsError } = await supabase
-        .from('complaints')
-        .select('*')
-        .order('created_at', { ascending: false });
-
       if (complaintsError) throw complaintsError;
-      setComplaints(complaintsData || []);
-
-      // 5. Fetch approvals
-      const { data: approvalsData, error: approvalsError } = await supabase
-        .from('approvals')
-        .select('*')
-        .order('created_at', { ascending: false });
-
       if (approvalsError) throw approvalsError;
+
+      setFlats(flatsData || []);
+      setMaintenanceRecords(recordsData || []);
+      setAnnouncements(noticesData || []);
+      setComplaints(complaintsData || []);
       setApprovals(approvalsData || []);
 
-      // 6. Fetch settings
-      const { data: settingsData, error: settingsError } = await supabase
-        .from('settings')
-        .select('*');
-
+      // Settings
       let currentMaintenanceAmount = 2000;
       if (!settingsError && settingsData) {
         const amtSetting = settingsData.find(s => s.key === 'maintenance_amount');
@@ -160,19 +142,11 @@ export default function AdminDashboard({ session, onLogout }) {
         }
       }
 
-      // 5. Calculate Stats
       calculateStats(flatsData || [], recordsData || [], currentMaintenanceAmount);
 
-      // 7. Fetch contacts (graceful fallback)
-      try {
-        const { data: contactsData, error: contactsError } = await supabase
-          .from('contacts')
-          .select('*')
-          .order('name', { ascending: true });
-        if (contactsError) throw contactsError;
-        setContacts(contactsData || []);
-      } catch (cErr) {
-        console.warn('Could not load contacts directory:', cErr.message);
+      // Contacts (graceful — already caught above)
+      if (contactsResult?.data) {
+        setContacts(contactsResult.data);
       }
     } catch (err) {
       console.error('Error fetching admin data:', err);
