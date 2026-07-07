@@ -23,6 +23,16 @@ export default function AdminDashboard({ session, onLogout }) {
   const [approvals, setApprovals] = useState([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // Ledger Filter/Sort/Search States
+  const [ledgerSearchQuery, setLedgerSearchQuery] = useState('');
+  const [showLedgerFilters, setShowLedgerFilters] = useState(false);
+  const [ledgerStatusFilter, setLedgerStatusFilter] = useState('all');
+  const [ledgerOccupancyFilter, setLedgerOccupancyFilter] = useState('all');
+  const [ledgerMethodFilter, setLedgerMethodFilter] = useState('all');
+  const [ledgerSortBy, setLedgerSortBy] = useState('flat_no');
+  const [ledgerSortOrder, setLedgerSortOrder] = useState('asc');
+  const [ledgerPage, setLedgerPage] = useState(1);
+
   // Settings States
   const [maintenanceAmount, setMaintenanceAmount] = useState(2000);
   const [maintenanceAmountInput, setMaintenanceAmountInput] = useState(2000);
@@ -38,6 +48,15 @@ export default function AdminDashboard({ session, onLogout }) {
     occupancyRate: 0,
     collectionRate: 0
   });
+
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setEditingFlat(null);
+    setRecordingPayment(null);
+    setSelectedComplaint(null);
+    setIsMobileMenuOpen(false);
+  };
 
   useEffect(() => {
     fetchData();
@@ -512,6 +531,146 @@ export default function AdminDashboard({ session, onLogout }) {
     }
   };
 
+  useEffect(() => {
+    setLedgerPage(1);
+  }, [ledgerSearchQuery, ledgerStatusFilter, ledgerOccupancyFilter, ledgerMethodFilter]);
+
+  // Processed (filtered, searched, sorted) ledger records
+  const processedLedgerRecords = (() => {
+    // 1. Map over all flats to get their corresponding maintenance info
+    let list = flats.map(flat => {
+      const record = maintenanceRecords.find(r => r.flat_no === flat.flat_no);
+      const paid = record ? record.amount_paid : 0;
+      const due = record ? record.amount_due : maintenanceAmount;
+      const status = record ? record.payment_status : 'Unpaid';
+      const method = record ? record.payment_method : '-';
+      const date = record && record.payment_date ? new Date(record.payment_date).toLocaleDateString() : '-';
+      const rawDate = record && record.payment_date ? record.payment_date : '';
+      
+      let occupancyType = 'vacant';
+      if (!flat.is_vacant) {
+        occupancyType = flat.is_owner_occupied ? 'owner' : 'tenant';
+      }
+      
+      const occupantName = flat.is_vacant 
+        ? 'Vacant' 
+        : (flat.is_owner_occupied 
+            ? (flat.owner_name ? flat.owner_name : 'Owner') 
+            : (flat.tenant_name ? flat.tenant_name : 'Tenant'));
+            
+      const occupantLabel = flat.is_vacant 
+        ? 'Vacant' 
+        : (flat.is_owner_occupied 
+            ? (flat.owner_name ? `Owner: ${flat.owner_name}` : 'Owner') 
+            : (flat.tenant_name ? `Tenant: ${flat.tenant_name}` : 'Tenant'));
+
+      return {
+        flat,
+        record,
+        flat_no: flat.flat_no,
+        paid,
+        due,
+        status,
+        method,
+        date,
+        rawDate,
+        occupancyType,
+        occupantName,
+        occupantLabel,
+      };
+    });
+
+    // 2. Search filter
+    if (ledgerSearchQuery.trim()) {
+      const q = ledgerSearchQuery.toLowerCase();
+      list = list.filter(item => 
+        item.flat_no.toLowerCase().includes(q) || 
+        item.occupantName.toLowerCase().includes(q)
+      );
+    }
+
+    // 3. Status filter
+    if (ledgerStatusFilter !== 'all') {
+      list = list.filter(item => item.status.toLowerCase() === ledgerStatusFilter.toLowerCase());
+    }
+
+    // 4. Occupancy filter
+    if (ledgerOccupancyFilter !== 'all') {
+      list = list.filter(item => item.occupancyType.toLowerCase() === ledgerOccupancyFilter.toLowerCase());
+    }
+
+    // 5. Method filter
+    if (ledgerMethodFilter !== 'all') {
+      list = list.filter(item => {
+        if (ledgerMethodFilter === '-') {
+          return item.method === '-';
+        }
+        return item.method.toLowerCase() === ledgerMethodFilter.toLowerCase();
+      });
+    }
+
+    // 6. Sort
+    list.sort((a, b) => {
+      let valA = a[ledgerSortBy];
+      let valB = b[ledgerSortBy];
+
+      // Handle custom fields sorting
+      if (ledgerSortBy === 'flat_no') {
+        return ledgerSortOrder === 'asc' 
+          ? a.flat_no.localeCompare(b.flat_no, undefined, { numeric: true }) 
+          : b.flat_no.localeCompare(a.flat_no, undefined, { numeric: true });
+      }
+
+      if (ledgerSortBy === 'date') {
+        const timeA = a.rawDate ? new Date(a.rawDate).getTime() : 0;
+        const timeB = b.rawDate ? new Date(b.rawDate).getTime() : 0;
+        return ledgerSortOrder === 'asc' ? timeA - timeB : timeB - timeA;
+      }
+
+      if (ledgerSortBy === 'due') {
+        valA = a.due;
+        valB = b.due;
+      } else if (ledgerSortBy === 'paid') {
+        valA = a.paid;
+        valB = b.paid;
+      } else if (ledgerSortBy === 'status') {
+        valA = a.status;
+        valB = b.status;
+      }
+
+      if (typeof valA === 'string') {
+        return ledgerSortOrder === 'asc' 
+          ? valA.localeCompare(valB) 
+          : valB.localeCompare(valA);
+      } else {
+        return ledgerSortOrder === 'asc' 
+          ? (valA > valB ? 1 : -1) 
+          : (valA < valB ? 1 : -1);
+      }
+    });
+
+    return list;
+  })();
+
+  const handleResetFilters = () => {
+    setLedgerSearchQuery('');
+    setLedgerStatusFilter('all');
+    setLedgerOccupancyFilter('all');
+    setLedgerMethodFilter('all');
+    setLedgerSortBy('flat_no');
+    setLedgerSortOrder('asc');
+    setLedgerPage(1);
+  };
+
+  const recordsPerPage = 10;
+  const totalRecords = processedLedgerRecords.length;
+  const totalPages = Math.ceil(totalRecords / recordsPerPage);
+  
+  const currentPage = Math.max(1, Math.min(ledgerPage, totalPages || 1));
+  const startIndex = (currentPage - 1) * recordsPerPage;
+  const endIndex = Math.min(startIndex + recordsPerPage, totalRecords);
+  const paginatedRecords = processedLedgerRecords.slice(startIndex, endIndex);
+
   // Group flats by floor for the 3D-like grid view
   const floors = {};
   for (let floor = 4; floor >= 0; floor--) {
@@ -567,7 +726,7 @@ export default function AdminDashboard({ session, onLogout }) {
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <button
-            onClick={() => { setActiveTab('overview'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('overview')}
             className={`btn ${activeTab === 'overview' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -580,7 +739,7 @@ export default function AdminDashboard({ session, onLogout }) {
             Overview
           </button>
           <button
-            onClick={() => { setActiveTab('flats'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('flats')}
             className={`btn ${activeTab === 'flats' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -591,7 +750,7 @@ export default function AdminDashboard({ session, onLogout }) {
             Flats Directory
           </button>
           <button
-            onClick={() => { setActiveTab('ledger'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('ledger')}
             className={`btn ${activeTab === 'ledger' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -601,7 +760,7 @@ export default function AdminDashboard({ session, onLogout }) {
             Maintenance Ledger
           </button>
           <button
-            onClick={() => { setActiveTab('approvals'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('approvals')}
             className={`btn ${activeTab === 'approvals' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -616,7 +775,7 @@ export default function AdminDashboard({ session, onLogout }) {
             )}
           </button>
           <button
-            onClick={() => { setActiveTab('notices'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('notices')}
             className={`btn ${activeTab === 'notices' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -627,7 +786,7 @@ export default function AdminDashboard({ session, onLogout }) {
             Announcements
           </button>
           <button
-            onClick={() => { setActiveTab('complaints'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('complaints')}
             className={`btn ${activeTab === 'complaints' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -642,7 +801,7 @@ export default function AdminDashboard({ session, onLogout }) {
             )}
           </button>
           <button
-            onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }}
+            onClick={() => handleTabChange('settings')}
             className={`btn ${activeTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
@@ -1066,7 +1225,7 @@ export default function AdminDashboard({ session, onLogout }) {
                       </table>
                     </div>
                     <div style={{ marginTop: '1rem', textAlign: 'right' }}>
-                      <button className="btn btn-secondary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }} onClick={() => setActiveTab('ledger')}>
+                      <button className="btn btn-secondary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }} onClick={() => handleTabChange('ledger')}>
                         View Full Ledger
                       </button>
                     </div>
@@ -1077,7 +1236,7 @@ export default function AdminDashboard({ session, onLogout }) {
                     <div className="glass-panel" style={{ padding: '1.5rem', flex: 1 }}>
                       <div className="flex-between mb-2">
                         <h3 style={{ fontSize: '1.05rem' }}>Recent Notices</h3>
-                        <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} onClick={() => setActiveTab('notices')}>
+                        <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} onClick={() => handleTabChange('notices')}>
                           Manage
                         </button>
                       </div>
@@ -1098,7 +1257,7 @@ export default function AdminDashboard({ session, onLogout }) {
                     <div className="glass-panel" style={{ padding: '1.5rem', flex: 1 }}>
                       <div className="flex-between mb-2">
                         <h3 style={{ fontSize: '1.05rem' }}>Pending Complaints</h3>
-                        <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} onClick={() => setActiveTab('complaints')}>
+                        <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} onClick={() => handleTabChange('complaints')}>
                           View All
                         </button>
                       </div>
@@ -1190,6 +1349,174 @@ export default function AdminDashboard({ session, onLogout }) {
                   </div>
                 </div>
 
+                <style>{`
+                  @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(-5px); }
+                    to { opacity: 1; transform: translateY(0); }
+                  }
+                `}</style>
+
+                {/* Search, Filter & Sort Controls */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+                  {/* Top Row: Search input */}
+                  <div style={{ display: 'flex', gap: '1rem', width: '100%', flexWrap: 'wrap' }}>
+                    <div style={{ position: 'relative', flex: 1, minWidth: '280px' }}>
+                      <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}
+                      >
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                      </svg>
+                      <input
+                        type="text"
+                        placeholder="Search by Flat number or occupant name..."
+                        className="input-field"
+                        value={ledgerSearchQuery}
+                        onChange={(e) => setLedgerSearchQuery(e.target.value)}
+                        style={{ width: '100%', paddingLeft: '2.75rem' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Second Row: Actions, Sorting and Showing count */}
+                  <div className="flex-between" style={{ flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      {/* FILTERS toggle button */}
+                      <button
+                        type="button"
+                        onClick={() => setShowLedgerFilters(!showLedgerFilters)}
+                        className={`btn ${showLedgerFilters ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', height: '38px' }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                        </svg>
+                        FILTERS
+                      </button>
+
+                      {/* SORT Label & Select */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: '0.5rem' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-secondary)' }}>SORT</span>
+                        <select
+                          className="input-field"
+                          value={ledgerSortBy}
+                          onChange={(e) => setLedgerSortBy(e.target.value)}
+                          style={{ padding: '0.35rem 2rem 0.35rem 0.75rem', height: '38px', fontSize: '0.85rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}
+                        >
+                          <option value="flat_no">Flat Number</option>
+                          <option value="due">Amount Due</option>
+                          <option value="paid">Amount Paid</option>
+                          <option value="status">Payment Status</option>
+                          <option value="date">Payment Date</option>
+                        </select>
+
+                        {/* Sort Order Direction Toggle Button */}
+                        <button
+                          type="button"
+                          onClick={() => setLedgerSortOrder(ledgerSortOrder === 'asc' ? 'desc' : 'asc')}
+                          className="btn btn-secondary"
+                          style={{ padding: '0.5rem', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          title={ledgerSortOrder === 'asc' ? 'Sorting Ascending' : 'Sorting Descending'}
+                        >
+                          {ledgerSortOrder === 'asc' ? (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <line x1="12" y1="5" x2="12" y2="19"></line>
+                              <polyline points="19 12 12 19 5 12"></polyline>
+                            </svg>
+                          ) : (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <line x1="12" y1="19" x2="12" y2="5"></line>
+                              <polyline points="5 12 12 5 19 12"></polyline>
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* SHOWING Indicator */}
+                    <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>
+                      SHOWING {totalRecords === 0 ? '0' : `${startIndex + 1}-${endIndex}`} OF {totalRecords} RECORDS
+                    </div>
+                  </div>
+
+                  {/* ADVANCED FILTERS Panel */}
+                  {showLedgerFilters && (
+                    <div className="glass-panel" style={{ padding: '1.25rem', marginTop: '0.5rem', animation: 'fadeIn 0.2s ease-out' }}>
+                      <div className="flex-between mb-3" style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
+                        <span style={{ fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '0.05em', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                          </svg>
+                          ADVANCED FILTERS
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleResetFilters}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                        >
+                          ✕ RESET ALL
+                        </button>
+                      </div>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                        <div className="input-group" style={{ margin: 0 }}>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '0.35rem' }}>Status</label>
+                          <select
+                            className="input-field"
+                            value={ledgerStatusFilter}
+                            onChange={(e) => setLedgerStatusFilter(e.target.value)}
+                            style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+                          >
+                            <option value="all">All Statuses</option>
+                            <option value="paid">Paid</option>
+                            <option value="partially paid">Partially Paid</option>
+                            <option value="unpaid">Unpaid</option>
+                          </select>
+                        </div>
+
+                        <div className="input-group" style={{ margin: 0 }}>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '0.35rem' }}>Occupancy</label>
+                          <select
+                            className="input-field"
+                            value={ledgerOccupancyFilter}
+                            onChange={(e) => setLedgerOccupancyFilter(e.target.value)}
+                            style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+                          >
+                            <option value="all">All Occupancies</option>
+                            <option value="owner">Owner Occupied</option>
+                            <option value="tenant">Rented out to Tenant</option>
+                            <option value="vacant">Vacant</option>
+                          </select>
+                        </div>
+
+                        <div className="input-group" style={{ margin: 0 }}>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '0.35rem' }}>Payment Method</label>
+                          <select
+                            className="input-field"
+                            value={ledgerMethodFilter}
+                            onChange={(e) => setLedgerMethodFilter(e.target.value)}
+                            style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+                          >
+                            <option value="all">All Methods</option>
+                            <option value="upi">UPI</option>
+                            <option value="cash">Cash</option>
+                            <option value="bank transfer">Bank Transfer</option>
+                            <option value="-">None (-)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Desktop View: Table */}
                 <div className="glass-panel desktop-only" style={{ padding: '1rem', overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '700px' }}>
@@ -1206,53 +1533,49 @@ export default function AdminDashboard({ session, onLogout }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {flats.map(flat => {
-                        const record = maintenanceRecords.find(r => r.flat_no === flat.flat_no);
-                        const paid = record ? record.amount_paid : 0;
-                        const due = record ? record.amount_due : maintenanceAmount;
-                        const status = record ? record.payment_status : 'Unpaid';
-                        const method = record ? record.payment_method : '-';
-                        const date = record && record.payment_date ? new Date(record.payment_date).toLocaleDateString() : '-';
-                        const occupantName = flat.is_vacant 
-                          ? 'Vacant' 
-                          : (flat.is_owner_occupied 
-                              ? (flat.owner_name ? `Owner: ${flat.owner_name}` : 'Owner') 
-                              : (flat.tenant_name ? `Tenant: ${flat.tenant_name}` : 'Tenant'));
-
-                        return (
-                          <tr key={flat.flat_no} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
-                            <td style={{ padding: '1rem 0.75rem', fontWeight: 'bold' }}>{flat.flat_no}</td>
-                            <td style={{ padding: '1rem 0.75rem' }}>
-                              <span className={`badge ${status === 'Paid' ? 'badge-paid' : status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`}>
-                                {status}
-                              </span>
-                            </td>
-                            <td style={{ padding: '1rem 0.75rem', color: flat.is_vacant ? 'var(--text-muted)' : 'var(--text-primary)' }}>{occupantName}</td>
-                            <td style={{ padding: '1rem 0.75rem' }}>₹{due}</td>
-                            <td style={{ padding: '1rem 0.75rem', color: 'var(--success)' }}>₹{paid}</td>
-                            <td style={{ padding: '1rem 0.75rem' }}>{date}</td>
-                            <td style={{ padding: '1rem 0.75rem' }}>{method}</td>
-                            <td style={{ padding: '1rem 0.75rem', textAlign: 'right' }}>
-                              <button
-                                className="btn btn-secondary"
-                                style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
-                                onClick={() => setRecordingPayment({
-                                  flat_no: flat.flat_no,
-                                  amount_due: due,
-                                  amount_paid: paid || due,
-                                  payment_status: status === 'Unpaid' ? 'Paid' : status,
-                                  payment_date: record && record.payment_date ? record.payment_date.substring(0, 10) : new Date().toISOString().substring(0, 10),
-                                  payment_method: record ? record.payment_method : 'UPI',
-                                  transaction_id: record ? record.transaction_id : '',
-                                  remarks: record ? record.remarks : ''
-                                })}
-                              >
-                                Record Payment
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {paginatedRecords.length === 0 ? (
+                        <tr>
+                          <td colSpan="8" style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
+                            No maintenance records found. Try modifying your search or filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        paginatedRecords.map(({ flat, record, flat_no, paid, due, status, method, date, occupantLabel }) => {
+                          return (
+                            <tr key={flat_no} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
+                              <td style={{ padding: '1rem 0.75rem', fontWeight: 'bold' }}>{flat_no}</td>
+                              <td style={{ padding: '1rem 0.75rem' }}>
+                                <span className={`badge ${status === 'Paid' ? 'badge-paid' : status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`}>
+                                  {status}
+                                </span>
+                              </td>
+                              <td style={{ padding: '1rem 0.75rem', color: flat.is_vacant ? 'var(--text-muted)' : 'var(--text-primary)' }}>{occupantLabel}</td>
+                              <td style={{ padding: '1rem 0.75rem' }}>₹{due}</td>
+                              <td style={{ padding: '1rem 0.75rem', color: 'var(--success)' }}>₹{paid}</td>
+                              <td style={{ padding: '1rem 0.75rem' }}>{date}</td>
+                              <td style={{ padding: '1rem 0.75rem' }}>{method}</td>
+                              <td style={{ padding: '1rem 0.75rem', textAlign: 'right' }}>
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                                  onClick={() => setRecordingPayment({
+                                    flat_no: flat_no,
+                                    amount_due: due,
+                                    amount_paid: paid || due,
+                                    payment_status: status === 'Unpaid' ? 'Paid' : status,
+                                    payment_date: record && record.payment_date ? record.payment_date.substring(0, 10) : new Date().toISOString().substring(0, 10),
+                                    payment_method: record ? record.payment_method : 'UPI',
+                                    transaction_id: record ? record.transaction_id : '',
+                                    remarks: record ? record.remarks : ''
+                                  })}
+                                >
+                                  Record Payment
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1260,68 +1583,91 @@ export default function AdminDashboard({ session, onLogout }) {
                 {/* Mobile View: Cards */}
                 <div className="mobile-only" style={{ marginTop: '1rem' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    {flats.map(flat => {
-                      const record = maintenanceRecords.find(r => r.flat_no === flat.flat_no);
-                      const paid = record ? record.amount_paid : 0;
-                      const due = record ? record.amount_due : maintenanceAmount;
-                      const status = record ? record.payment_status : 'Unpaid';
-                      const method = record ? record.payment_method : '-';
-                      const date = record && record.payment_date ? new Date(record.payment_date).toLocaleDateString() : '-';
-                      const occupantName = flat.is_vacant 
-                        ? 'Vacant' 
-                        : (flat.is_owner_occupied 
-                          ? (flat.owner_name ? `Owner: ${flat.owner_name}` : 'Owner') 
-                          : (flat.tenant_name ? `Tenant: ${flat.tenant_name}` : 'Tenant'));
+                    {paginatedRecords.length === 0 ? (
+                      <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        No maintenance records found. Try modifying your search or filters.
+                      </div>
+                    ) : (
+                      paginatedRecords.map(({ flat, record, flat_no, paid, due, status, method, date, occupantLabel }) => {
+                        return (
+                          <div key={flat_no} className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            <div className="flex-between">
+                              <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Flat {flat_no}</span>
+                              <span className={`badge ${status === 'Paid' ? 'badge-paid' : status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`}>
+                                {status}
+                              </span>
+                            </div>
+                            
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem 1rem', fontSize: '0.85rem', color: 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '0.75rem' }}>
+                              <div>
+                                <strong style={{ color: 'var(--text-primary)' }}>Occupant:</strong><br/>
+                                {occupantLabel}
+                              </div>
+                              <div>
+                                <strong style={{ color: 'var(--text-primary)' }}>Amount Paid/Due:</strong><br/>
+                                ₹{paid} / ₹{due}
+                              </div>
+                              <div>
+                                <strong style={{ color: 'var(--text-primary)' }}>Payment Date:</strong><br/>
+                                {date}
+                              </div>
+                              <div>
+                                <strong style={{ color: 'var(--text-primary)' }}>Method:</strong><br/>
+                                {method}
+                              </div>
+                            </div>
 
-                      return (
-                        <div key={flat.flat_no} className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                          <div className="flex-between">
-                            <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Flat {flat.flat_no}</span>
-                            <span className={`badge ${status === 'Paid' ? 'badge-paid' : status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`}>
-                              {status}
-                            </span>
+                            <button
+                              className="btn btn-secondary"
+                              style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }}
+                              onClick={() => setRecordingPayment({
+                                flat_no: flat_no,
+                                amount_due: due,
+                                amount_paid: paid || due,
+                                payment_status: status === 'Unpaid' ? 'Paid' : status,
+                                payment_date: record && record.payment_date ? record.payment_date.substring(0, 10) : new Date().toISOString().substring(0, 10),
+                                payment_method: record ? record.payment_method : 'UPI',
+                                transaction_id: record ? record.transaction_id : '',
+                                remarks: record ? record.remarks : ''
+                              })}
+                            >
+                              Record Payment
+                            </button>
                           </div>
-                          
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem 1rem', fontSize: '0.85rem', color: 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: '0.75rem' }}>
-                            <div>
-                              <strong style={{ color: 'var(--text-primary)' }}>Occupant:</strong><br/>
-                              {occupantName}
-                            </div>
-                            <div>
-                              <strong style={{ color: 'var(--text-primary)' }}>Amount Paid/Due:</strong><br/>
-                              ₹{paid} / ₹{due}
-                            </div>
-                            <div>
-                              <strong style={{ color: 'var(--text-primary)' }}>Payment Date:</strong><br/>
-                              {date}
-                            </div>
-                            <div>
-                              <strong style={{ color: 'var(--text-primary)' }}>Method:</strong><br/>
-                              {method}
-                            </div>
-                          </div>
-
-                          <button
-                            className="btn btn-secondary"
-                            style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }}
-                            onClick={() => setRecordingPayment({
-                              flat_no: flat.flat_no,
-                              amount_due: due,
-                              amount_paid: paid || due,
-                              payment_status: status === 'Unpaid' ? 'Paid' : status,
-                              payment_date: record && record.payment_date ? record.payment_date.substring(0, 10) : new Date().toISOString().substring(0, 10),
-                              payment_method: record ? record.payment_method : 'UPI',
-                              transaction_id: record ? record.transaction_id : '',
-                              remarks: record ? record.remarks : ''
-                            })}
-                          >
-                            Record Payment
-                          </button>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                    )}
                   </div>
                 </div>
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => setLedgerPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="btn btn-secondary"
+                      style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', opacity: currentPage === 1 ? 0.5 : 1, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                    >
+                      ← Previous
+                    </button>
+                    
+                    <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                      Page <strong style={{ color: 'var(--text-primary)' }}>{currentPage}</strong> of <strong style={{ color: 'var(--text-primary)' }}>{totalPages}</strong>
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setLedgerPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="btn btn-secondary"
+                      style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', opacity: currentPage === totalPages ? 0.5 : 1, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                    >
+                      Next →
+                    </button>
+                  </div>
+                )}
               </div>
             )}
             {/* APPROVALS TAB */}

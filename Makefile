@@ -11,7 +11,12 @@ install: ## Install project dependencies
 	@echo "Installing dependencies..."
 	npm install
 
-dev: ## Start the development server (Vite)
+pre-dev:
+	@echo "Running pre-dev..."
+	@echo "Installing dependencies..."
+	npx -y npm install
+
+dev: pre-dev ## Start the development server (Vite)
 	@echo "Starting Vite development server..."
 	npm run dev
 
