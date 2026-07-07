@@ -384,6 +384,19 @@ export default function AdminDashboard({ session, onLogout }) {
           });
 
         if (paymentError) throw paymentError;
+
+      } else if (req.request_type === 'contact_suggestion') {
+        const details = req.details || {};
+
+        const { error: contactError } = await supabase
+          .from('contacts')
+          .insert([{
+            name: details.name,
+            phone_number: details.phone_number,
+            details: details.details || ''
+          }]);
+
+        if (contactError) throw contactError;
       }
 
       // 3. Mark approval request as Approved
@@ -1718,7 +1731,7 @@ export default function AdminDashboard({ session, onLogout }) {
               <div>
                 <div className="mb-4">
                   <h1 style={{ fontSize: '1.75rem' }}>Approval Requests Queue</h1>
-                  <p style={{ color: 'var(--text-secondary)' }}>Review, approve, or reject resident occupancy status changes and reported payments</p>
+                  <p style={{ color: 'var(--text-secondary)' }}>Review and action resident requests — occupancy changes, payments, and contact suggestions</p>
                 </div>
 
                 {/* Desktop View: Table */}
@@ -1745,7 +1758,7 @@ export default function AdminDashboard({ session, onLogout }) {
                       ) : (
                         approvals.map(req => {
                           const date = new Date(req.created_at).toLocaleString();
-                          const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : 'Payment Report';
+                          const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : req.request_type === 'contact_suggestion' ? 'Contact Suggestion' : 'Payment Report';
                           const statusBadgeClass = req.status === 'Approved' ? 'badge-paid' : req.status === 'Rejected' ? 'badge-unpaid' : 'badge-partial';
 
                           // Render nice details preview
@@ -1793,6 +1806,15 @@ export default function AdminDashboard({ session, onLogout }) {
                                     </a>
                                   </div>
                                 )}
+                              </div>
+                            );
+                          } else if (req.request_type === 'contact_suggestion') {
+                            const details = req.details || {};
+                            detailsContent = (
+                              <div style={{ fontSize: '0.85rem', lineHeight: '1.6' }}>
+                                <div style={{ fontWeight: 'bold', color: 'var(--secondary)' }}>{details.name}</div>
+                                <div>{details.phone_number}</div>
+                                {details.details && <div style={{ color: 'var(--text-muted)' }}>{details.details}</div>}
                               </div>
                             );
                           }
@@ -1872,7 +1894,7 @@ export default function AdminDashboard({ session, onLogout }) {
                     ) : (
                       approvals.map(req => {
                         const date = new Date(req.created_at).toLocaleString();
-                        const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : 'Payment Report';
+                        const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : req.request_type === 'contact_suggestion' ? 'Contact Suggestion' : 'Payment Report';
                         const statusBadgeClass = req.status === 'Approved' ? 'badge-paid' : req.status === 'Rejected' ? 'badge-unpaid' : 'badge-partial';
 
                         // Build detail rows as key-value pairs
@@ -1894,6 +1916,13 @@ export default function AdminDashboard({ session, onLogout }) {
                             { label: 'New Owner', value: d.new_owner_name || '—' },
                             { label: 'Phone', value: d.new_owner_phone || 'N/A' },
                             { label: 'Email', value: d.new_owner_email || 'N/A' },
+                          ];
+                        } else if (req.request_type === 'contact_suggestion') {
+                          const d = req.details || {};
+                          detailRows = [
+                            { label: 'Name', value: d.name || '—' },
+                            { label: 'Phone', value: d.phone_number || '—' },
+                            ...(d.details ? [{ label: 'Notes', value: d.details }] : []),
                           ];
                         } else if (req.request_type === 'payment_report') {
                           const d = req.details || {};
@@ -2138,7 +2167,7 @@ export default function AdminDashboard({ session, onLogout }) {
                 <div className="flex-between mb-4" style={{ flexWrap: 'wrap', gap: '1rem' }}>
                   <div>
                     <h1 style={{ fontSize: '1.75rem' }}>Contacts Directory</h1>
-                    <p style={{ color: 'var(--text-secondary)' }}>Emergency and helpful services contacts for all residents</p>
+                    <p style={{ color: 'var(--text-secondary)' }}>Manage emergency and helpful contacts. Resident suggestions appear in the Approvals queue first.</p>
                   </div>
                   <button
                     onClick={() => setShowAddContactModal(true)}

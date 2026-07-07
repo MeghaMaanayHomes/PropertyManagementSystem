@@ -272,16 +272,28 @@ export default function ResidentDashboard({ session, onLogout }) {
     }
     setSubmittingContact(true);
     try {
+      // Submit as an approval request — admin must approve before it appears in the directory
       const { error } = await supabase
-        .from('contacts')
-        .insert([newContact]);
+        .from('approvals')
+        .insert([{
+          flat_no: flatNo,
+          request_type: 'contact_suggestion',
+          details: {
+            name: newContact.name,
+            phone_number: newContact.phone_number,
+            details: newContact.details || ''
+          },
+          raised_by: session.role,
+          status: 'Pending'
+        }]);
 
       if (error) throw error;
       setNewContact({ name: '', phone_number: '', details: '' });
       setShowAddContactModal(false);
+      alert('Contact suggestion submitted for admin approval.');
       fetchResidentData();
     } catch (err) {
-      alert('Error adding contact: ' + err.message);
+      alert('Error submitting contact suggestion: ' + err.message);
     } finally {
       setSubmittingContact(false);
     }
@@ -1716,7 +1728,7 @@ export default function ResidentDashboard({ session, onLogout }) {
                       <line x1="12" y1="5" x2="12" y2="19"></line>
                       <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
-                    Add Contact
+                    Suggest a Contact
                   </button>
                 </div>
 
@@ -1812,7 +1824,8 @@ export default function ResidentDashboard({ session, onLogout }) {
                         </svg>
                       </button>
 
-                      <h2 style={{ marginBottom: '1.5rem', fontSize: '1.4rem' }}>Add New Contact</h2>
+                      <h2 style={{ marginBottom: '0.5rem', fontSize: '1.4rem' }}>Suggest a Contact</h2>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1.5rem' }}>Your suggestion will be reviewed by the admin before it appears in the directory.</p>
 
                       <form onSubmit={handleCreateContact} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                         <div className="input-group">
@@ -1868,7 +1881,7 @@ export default function ResidentDashboard({ session, onLogout }) {
                             disabled={submittingContact}
                             style={{ padding: '0.6rem 1.5rem' }}
                           >
-                            {submittingContact ? 'Adding...' : 'Add Contact'}
+                            {submittingContact ? 'Submitting...' : 'Submit for Approval'}
                           </button>
                         </div>
                       </form>
@@ -1979,7 +1992,7 @@ export default function ResidentDashboard({ session, onLogout }) {
                           <tbody>
                             {approvals.map(req => {
                               const date = new Date(req.created_at).toLocaleString();
-                              const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : 'Payment Report';
+                              const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : req.request_type === 'contact_suggestion' ? 'Contact Suggestion' : 'Payment Report';
                               const statusBadgeClass = req.status === 'Approved' ? 'badge-paid' : req.status === 'Rejected' ? 'badge-unpaid' : 'badge-partial';
                               let detailsStr = '';
                               if (req.request_type === 'occupancy_change') {
@@ -1988,6 +2001,9 @@ export default function ResidentDashboard({ session, onLogout }) {
                               } else if (req.request_type === 'ownership_transfer') {
                                 const d = req.details || {};
                                 detailsStr = `New Owner: ${d.new_owner_name || 'N/A'} (Phone: ${d.new_owner_phone || 'N/A'})`;
+                              } else if (req.request_type === 'contact_suggestion') {
+                                const d = req.details || {};
+                                detailsStr = `${d.name || 'N/A'} · ${d.phone_number || 'N/A'}`;
                               } else if (req.request_type === 'payment_report') {
                                 const d = req.details || {};
                                 detailsStr = `Month: ${d.billing_month} | Paid: ₹${d.amount_paid} via ${d.payment_method}`;
@@ -2011,7 +2027,7 @@ export default function ResidentDashboard({ session, onLogout }) {
                       <div className="mobile-only" style={{ display: 'none', flexDirection: 'column', gap: '0.85rem' }}>
                         {approvals.map(req => {
                           const date = new Date(req.created_at).toLocaleString();
-                          const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : 'Payment Report';
+                          const typeLabel = req.request_type === 'occupancy_change' ? 'Occupancy/Tenant Update' : req.request_type === 'ownership_transfer' ? 'Ownership Transfer' : req.request_type === 'contact_suggestion' ? 'Contact Suggestion' : 'Payment Report';
                           const statusBadgeClass = req.status === 'Approved' ? 'badge-paid' : req.status === 'Rejected' ? 'badge-unpaid' : 'badge-partial';
                           let detailLines = [];
                           if (req.request_type === 'occupancy_change') {
@@ -2028,6 +2044,13 @@ export default function ResidentDashboard({ session, onLogout }) {
                               ['New Owner', d.new_owner_name || 'N/A'],
                               ['Phone', d.new_owner_phone || 'N/A'],
                               ...(d.new_owner_email ? [['Email', d.new_owner_email]] : [])
+                            ];
+                          } else if (req.request_type === 'contact_suggestion') {
+                            const d = req.details || {};
+                            detailLines = [
+                              ['Name', d.name || 'N/A'],
+                              ['Phone', d.phone_number || 'N/A'],
+                              ...(d.details ? [['Notes', d.details]] : [])
                             ];
                           } else if (req.request_type === 'payment_report') {
                             const d = req.details || {};
