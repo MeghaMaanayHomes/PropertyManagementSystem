@@ -435,6 +435,7 @@ h1, h2, h3, h4, h5, h6 {
     flex-direction: column !important;
     padding: 1.5rem !important;
     margin-left: 0 !important;
+    overflow: hidden !important;
   }
 
   .sidebar.open {
@@ -464,22 +465,33 @@ h1, h2, h3, h4, h5, h6 {
   .sidebar nav {
     flex-direction: column !important;
     width: 100% !important;
-    gap: 0.5rem !important;
+    gap: 0.25rem !important;
     overflow-x: visible !important;
+    overflow-y: auto !important;
+    flex: 1 !important;
+    min-height: 0 !important;
   }
 
   .sidebar nav button {
     width: 100% !important;
     justify-content: flex-start !important;
-    padding: 0.75rem 1rem !important;
-    font-size: 0.95rem !important;
+    padding: 0.6rem 0.85rem !important;
+    font-size: 0.88rem !important;
   }
 
   .sidebar .btn-secondary {
-    margin-top: auto !important;
+    margin-top: 0 !important;
     width: 100% !important;
-    padding: 0.75rem !important;
-    font-size: 0.95rem !important;
+    padding: 0.65rem !important;
+    font-size: 0.9rem !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Thin divider above logout on mobile */
+  .sidebar > .btn-secondary:last-child {
+    border-top: 1px solid var(--glass-border) !important;
+    padding-top: 0.75rem !important;
+    margin-top: 0.5rem !important;
   }
 
   .flat-grid {
