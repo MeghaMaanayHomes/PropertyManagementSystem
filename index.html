@@ -6,6 +6,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Megha Maanay Homes - Apartment Portal</title>
     <meta name="description" content="Official resident and management portal for Megha Maanay Homes. Track maintenance payments, flat vacancy, and raise service requests." />
+    <script>
+      // GitHub Pages SPA redirect handler.
+      // When 404.html redirects here with ?p=/original/path, we restore the
+      // real URL using history.replaceState so React Router sees the correct path.
+      (function() {
+        var params = new URLSearchParams(window.location.search);
+        var p = params.get('p');
+        var h = params.get('h');
+        if (p) {
+          window.history.replaceState(
+            null, null,
+            p + (h ? h : '')
+          );
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

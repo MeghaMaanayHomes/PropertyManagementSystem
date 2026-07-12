@@ -6,9 +6,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Megha Maanay Homes - Apartment Portal</title>
     <meta name="description" content="Official resident and management portal for Megha Maanay Homes. Track maintenance payments, flat vacancy, and raise service requests." />
+    <script>
+      // GitHub Pages SPA redirect trick.
+      // When GitHub Pages gets a request for /login, /overview etc it serves this
+      // 404.html. We encode the original path + query as a query param and
+      // redirect back to the root, which IS served correctly.
+      // The redirect is then handled by the script in index.html.
+      var l = window.location;
+      l.replace(
+        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+        l.pathname.split('/').slice(0, 1).join('/') +
+        '/?p=' + encodeURIComponent(l.pathname + l.search) +
+        (l.hash ? '&h=' + encodeURIComponent(l.hash) : '')
+      );
+    </script>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <noscript>JavaScript is required to run this app.</noscript>
   </body>
 </html>
