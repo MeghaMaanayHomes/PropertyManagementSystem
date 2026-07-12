@@ -15,6 +15,9 @@
 -- ALTER TABLE public.flats ALTER COLUMN owner_password SET NOT NULL;
 -- ALTER TABLE public.flats ALTER COLUMN tenant_password SET NOT NULL;
 -- ==========================================
+-- NEW: Add session_version to admins for session invalidation on password change:
+-- ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1;
+-- ==========================================
 
 -- 1. Create flats table
 CREATE TABLE IF NOT EXISTS public.flats (
@@ -37,12 +40,22 @@ CREATE TABLE IF NOT EXISTS public.flats (
 CREATE TABLE IF NOT EXISTS public.admins (
     username TEXT PRIMARY KEY,
     password TEXT NOT NULL,
+    -- session_version increments on every password change or deactivation;
+    -- stored in localStorage session so any active session with an older
+    -- version is automatically invalidated.
+    session_version INTEGER NOT NULL DEFAULT 1,
+    -- is_active=false prevents login and immediately kills all active sessions
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
+-- If upgrading an existing database, run:
+-- ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1;
+-- ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+
 -- 3. Insert default admin credentials
-INSERT INTO public.admins (username, password)
-VALUES ('admin', 'admin123')
+INSERT INTO public.admins (username, password, session_version, is_active)
+VALUES ('admin', 'admin123', 1, TRUE)
 ON CONFLICT (username) DO NOTHING;
 
 -- 4. Create maintenance_records table to track monthly billing and payments

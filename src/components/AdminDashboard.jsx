@@ -45,6 +45,13 @@ export default function AdminDashboard({ session, onLogout }) {
   const [maintenanceAmountInput, setMaintenanceAmountInput] = useState(2000);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
+  // Admin User Management States
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [showAddAdminModal, setShowAddAdminModal] = useState(false);
+  const [newAdmin, setNewAdmin] = useState({ username: '', password: '' });
+  const [editingAdmin, setEditingAdmin] = useState(null); // { username, password }
+  const [isSubmittingAdmin, setIsSubmittingAdmin] = useState(false);
+
   // Statistics
   const [stats, setStats] = useState({
     totalFlats: 40,
@@ -106,6 +113,7 @@ export default function AdminDashboard({ session, onLogout }) {
         { data: approvalsData,   error: approvalsError },
         { data: settingsData,    error: settingsError },
         contactsResult,
+        adminsResult,
       ] = await Promise.all([
         supabase.from('flats').select('*').order('flat_no', { ascending: true }),
         supabase.from('maintenance_records').select('*').eq('billing_month', selectedMonth),
@@ -114,6 +122,7 @@ export default function AdminDashboard({ session, onLogout }) {
         supabase.from('approvals').select('*').order('created_at', { ascending: false }),
         supabase.from('settings').select('*'),
         supabase.from('contacts').select('*').order('name', { ascending: true }).then(r => r).catch(() => ({ data: [], error: null })),
+        supabase.from('admins').select('username, is_active, created_at').order('created_at', { ascending: true }).then(r => r).catch(() => ({ data: [], error: null })),
       ]);
 
       if (flatsError) throw flatsError;
@@ -147,6 +156,11 @@ export default function AdminDashboard({ session, onLogout }) {
       // Contacts (graceful — already caught above)
       if (contactsResult?.data) {
         setContacts(contactsResult.data);
+      }
+
+      // Admin users (graceful)
+      if (adminsResult?.data) {
+        setAdminUsers(adminsResult.data);
       }
     } catch (err) {
       console.error('Error fetching admin data:', err);
@@ -461,6 +475,174 @@ export default function AdminDashboard({ session, onLogout }) {
       fetchData();
     } catch (err) {
       alert('Error saving payment record: ' + err.message);
+    }
+  };
+
+  // ---- Admin User Management ----
+
+  const handleAddAdmin = async (e) => {
+    e.preventDefault();
+    const uname = newAdmin.username.trim().toLowerCase();
+    if (!uname || !newAdmin.password) {
+      alert('Username and password are required.');
+      return;
+    }
+    setIsSubmittingAdmin(true);
+    try {
+      const { error } = await supabase
+        .from('admins')
+        .insert([{ username: uname, password: newAdmin.password, session_version: 1 }]);
+
+      if (error) {
+        if (error.code === '23505') throw new Error(`Username "${uname}" already exists.`);
+        throw error;
+      }
+      setNewAdmin({ username: '', password: '' });
+      setShowAddAdminModal(false);
+      fetchData();
+    } catch (err) {
+      alert('Error adding admin: ' + err.message);
+    } finally {
+      setIsSubmittingAdmin(false);
+    }
+  };
+
+  const handleUpdateAdminPassword = async (e) => {
+    e.preventDefault();
+    if (!editingAdmin?.password?.trim()) {
+      alert('New password cannot be empty.');
+      return;
+    }
+    // Prevent an admin from locking themselves out, but still allow
+    // changing their own password (they'll be re-prompted to log in).
+    setIsSubmittingAdmin(true);
+    try {
+      // Increment session_version so every active session for this admin
+      // is immediately invalidated (App.jsx polls and detects the mismatch).
+      const { data: current, error: fetchErr } = await supabase
+        .from('admins')
+        .select('session_version')
+        .eq('username', editingAdmin.username)
+        .maybeSingle();
+
+      if (fetchErr) throw fetchErr;
+
+      const newVersion = (current?.session_version ?? 1) + 1;
+
+      const { error } = await supabase
+        .from('admins')
+        .update({ password: editingAdmin.password.trim(), session_version: newVersion })
+        .eq('username', editingAdmin.username);
+
+      if (error) throw error;
+
+      // If the currently-logged-in admin changed their own password,
+      // log them out immediately so they re-authenticate with the new password.
+      const storedRaw = localStorage.getItem('mmh_session');
+      if (storedRaw) {
+        try {
+          const stored = JSON.parse(storedRaw);
+          if (stored.username === editingAdmin.username) {
+            alert('Your own password was changed. You will now be logged out.');
+            setEditingAdmin(null);
+            onLogout();
+            return;
+          }
+        } catch { /* ignore */ }
+      }
+
+      setEditingAdmin(null);
+      alert(`Password updated for "${editingAdmin.username}". Their active sessions have been invalidated.`);
+      fetchData();
+    } catch (err) {
+      alert('Error updating password: ' + err.message);
+    } finally {
+      setIsSubmittingAdmin(false);
+    }
+  };
+
+  const handleToggleAdminActive = async (username, currentlyActive) => {
+    // Cannot deactivate yourself
+    const storedRaw = localStorage.getItem('mmh_session');
+    if (storedRaw) {
+      try {
+        const stored = JSON.parse(storedRaw);
+        if (stored.username === username) {
+          alert('You cannot deactivate your own account while logged in.');
+          return;
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Cannot deactivate the last active admin
+    if (currentlyActive) {
+      const activeCount = adminUsers.filter(a => a.is_active !== false).length;
+      if (activeCount <= 1) {
+        alert('Cannot deactivate the last active admin account.');
+        return;
+      }
+    }
+
+    const action = currentlyActive ? 'deactivate' : 'reactivate';
+    if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} admin "${username}"?${currentlyActive ? ' They will be immediately logged out of all sessions.' : ''}`)) return;
+
+    try {
+      // Fetch current session_version first
+      const { data: current, error: fetchErr } = await supabase
+        .from('admins')
+        .select('session_version')
+        .eq('username', username)
+        .maybeSingle();
+
+      if (fetchErr) throw fetchErr;
+
+      // Increment session_version when deactivating so all active sessions
+      // for this user are immediately kicked out by App.jsx's poll.
+      const newVersion = currentlyActive ? (current?.session_version ?? 1) + 1 : (current?.session_version ?? 1);
+
+      const { error } = await supabase
+        .from('admins')
+        .update({ is_active: !currentlyActive, session_version: newVersion })
+        .eq('username', username);
+
+      if (error) throw error;
+
+      fetchData();
+    } catch (err) {
+      alert(`Error ${action === 'deactivate' ? 'deactivating' : 'reactivating'} admin: ` + err.message);
+    }
+  };
+
+  const handleDeleteAdmin = async (username) => {
+    // Prevent deleting all admins — keep at least one active
+    const activeCount = adminUsers.filter(a => a.is_active !== false).length;
+    const isTargetActive = adminUsers.find(a => a.username === username)?.is_active !== false;
+    if (adminUsers.length <= 1 || (isTargetActive && activeCount <= 1)) {
+      alert('Cannot delete the only remaining admin.');
+      return;
+    }
+    // Prevent self-delete
+    const storedRaw = localStorage.getItem('mmh_session');
+    if (storedRaw) {
+      try {
+        const stored = JSON.parse(storedRaw);
+        if (stored.username === username) {
+          alert('You cannot delete your own account while logged in.');
+          return;
+        }
+      } catch { /* ignore */ }
+    }
+    if (!confirm(`Delete admin user "${username}"? This cannot be undone.`)) return;
+    try {
+      const { error } = await supabase
+        .from('admins')
+        .delete()
+        .eq('username', username);
+
+      if (error) throw error;
+      fetchData();
+    } catch (err) {
+      alert('Error deleting admin: ' + err.message);
     }
   };
 
@@ -1046,7 +1228,7 @@ export default function AdminDashboard({ session, onLogout }) {
                     <h4 style={{ fontSize: '1rem', color: 'var(--primary)', marginBottom: '1rem', fontWeight: 'bold' }}>Tenant Details</h4>
                     <div className="grid-split-1-1" style={{ gap: '1rem' }}>
                       <div className="input-group">
-                        <label htmlFor="tenant-name-input">Tenant Name</label>
+                        <label htmlFor="tenant-name-input">Tenant Name<span className="label-secondary">Name as per Aadhaar</span></label>
                         <input
                           id="tenant-name-input"
                           type="text"
@@ -2359,20 +2541,21 @@ export default function AdminDashboard({ session, onLogout }) {
               <div>
                 <div className="mb-4">
                   <h1 style={{ fontSize: '1.75rem' }}>Portal Settings</h1>
-                  <p style={{ color: 'var(--text-secondary)' }}>Manage portal-wide configurations and fees</p>
+                  <p style={{ color: 'var(--text-secondary)' }}>Manage portal-wide configurations and admin users</p>
                 </div>
 
-                <div className="glass-panel" style={{ padding: '2rem', maxWidth: '600px' }}>
+                {/* ---- Maintenance Fee ---- */}
+                <div className="glass-panel settings-panel">
                   <form onSubmit={handleSaveSettings}>
                     <h3 style={{ fontSize: '1.2rem', marginBottom: '1.25rem', color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
                       Maintenance Fee Configuration
                     </h3>
-                    
+
                     <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.5' }}>
                       Set the default monthly maintenance fee that is charged to each flat. Changes will apply to all calculations and new payment reports generated on the portal.
                     </p>
 
-                    <div className="input-group" style={{ marginBottom: '1.5rem', maxWidth: '300px' }}>
+                    <div className="input-group settings-fee-input" style={{ marginBottom: '1.5rem' }}>
                       <label htmlFor="settings-maintenance-fee" style={{ fontWeight: '600' }}>Monthly Maintenance Fee (₹)</label>
                       <input
                         id="settings-maintenance-fee"
@@ -2392,11 +2575,149 @@ export default function AdminDashboard({ session, onLogout }) {
                       type="submit"
                       className="btn btn-primary"
                       disabled={isSavingSettings}
-                      style={{ padding: '0.75rem 1.5rem' }}
+                      style={{ padding: '0.75rem 1.5rem', width: '100%', maxWidth: '200px' }}
                     >
-                      {isSavingSettings ? 'Saving Changes...' : 'Save Settings'}
+                      {isSavingSettings ? 'Saving...' : 'Save Settings'}
                     </button>
                   </form>
+                </div>
+
+                {/* ---- Admin User Management ---- */}
+                <div className="glass-panel settings-panel" style={{ marginBottom: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <h3 style={{ fontSize: '1.2rem', color: 'var(--primary)', margin: 0 }}>
+                        Admin Users
+                      </h3>
+                      <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0.25rem 0 0' }}>
+                        Manage who can access the admin portal. Password changes instantly invalidate all active sessions.
+                      </p>
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      style={{ padding: '0.55rem 1.1rem', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}
+                      onClick={() => { setNewAdmin({ username: '', password: '' }); setShowAddAdminModal(true); }}
+                    >
+                      <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                      </svg>
+                      Add Admin
+                    </button>
+                  </div>
+
+                  {adminUsers.length === 0 ? (
+                    <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '1.5rem 0', fontSize: '0.9rem' }}>
+                      No admin users found.
+                    </p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                      {adminUsers.map(admin => {
+                        const isSelf = (() => {
+                          try {
+                            const s = JSON.parse(localStorage.getItem('mmh_session') || '{}');
+                            return s.username === admin.username;
+                          } catch { return false; }
+                        })();
+                        const isActive = admin.is_active !== false;
+
+                        return (
+                          <div key={admin.username} className="admin-user-row" style={{ opacity: isActive ? 1 : 0.6 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+                              <div style={{
+                                width: '36px', height: '36px', borderRadius: '50%',
+                                background: isSelf ? 'var(--primary)' : isActive ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.06)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                flexShrink: 0, fontSize: '0.9rem', fontWeight: '700',
+                                color: isSelf ? '#fff' : isActive ? 'var(--primary)' : 'var(--text-muted)'
+                              }}>
+                                {admin.username.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: '600', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                  {admin.username}
+                                  {isSelf && (
+                                    <span style={{ fontSize: '0.65rem', background: 'rgba(99,102,241,0.2)', color: 'var(--primary)', padding: '1px 6px', borderRadius: '4px', fontWeight: '600' }}>
+                                      You
+                                    </span>
+                                  )}
+                                  <span style={{
+                                    fontSize: '0.65rem',
+                                    background: isActive ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)',
+                                    color: isActive ? 'var(--success)' : 'var(--accent)',
+                                    border: `1px solid ${isActive ? 'rgba(16,185,129,0.2)' : 'rgba(244,63,94,0.2)'}`,
+                                    padding: '1px 6px', borderRadius: '4px', fontWeight: '600'
+                                  }}>
+                                    {isActive ? 'Active' : 'Inactive'}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                                  Added {new Date(admin.created_at).toLocaleDateString()}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="admin-user-actions">
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '0.4rem 0.8rem', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                                onClick={() => setEditingAdmin({ username: admin.username, password: '' })}
+                                title="Change password"
+                              >
+                                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                </svg>
+                                Reset Password
+                              </button>
+                              <button
+                                className="btn btn-secondary"
+                                style={{
+                                  padding: '0.4rem 0.8rem', fontSize: '0.82rem',
+                                  color: isActive ? 'var(--warning)' : 'var(--success)',
+                                  display: 'flex', alignItems: 'center', gap: '0.35rem'
+                                }}
+                                onClick={() => handleToggleAdminActive(admin.username, isActive)}
+                                disabled={isSelf}
+                                title={isSelf ? "Can't deactivate your own account" : isActive ? 'Deactivate this admin' : 'Reactivate this admin'}
+                              >
+                                {isActive ? (
+                                  <>
+                                    <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                                      <circle cx="12" cy="12" r="10"></circle>
+                                      <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+                                    </svg>
+                                    Deactivate
+                                  </>
+                                ) : (
+                                  <>
+                                    <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                                      <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                    Reactivate
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '0.4rem 0.7rem', fontSize: '0.82rem', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                                onClick={() => handleDeleteAdmin(admin.username)}
+                                disabled={adminUsers.length <= 1 || isSelf}
+                                title={isSelf ? "Can't delete your own account" : adminUsers.length <= 1 ? "Can't delete the last admin" : "Delete admin"}                              >
+                                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="3 6 5 6 21 6"></polyline>
+                                  <path d="M19 6l-1 14H6L5 6"></path>
+                                  <path d="M10 11v6M14 11v6"></path>
+                                  <path d="M9 6V4h6v2"></path>
+                                </svg>
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -2608,6 +2929,110 @@ export default function AdminDashboard({ session, onLogout }) {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD ADMIN MODAL */}
+      {showAddAdminModal && (
+        <div className="modal-overlay">
+          <div className="modal-content glass-panel glow-primary" style={{ maxWidth: '440px' }}>
+            <h2 style={{ marginBottom: '0.5rem' }}>Add Admin User</h2>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+              The new admin will be able to log in immediately with these credentials.
+            </p>
+            <form onSubmit={handleAddAdmin}>
+              <div className="input-group">
+                <label htmlFor="new-admin-username">Username</label>
+                <input
+                  id="new-admin-username"
+                  type="text"
+                  className="input-field"
+                  value={newAdmin.username}
+                  onChange={(e) => setNewAdmin({ ...newAdmin, username: e.target.value })}
+                  required
+                  placeholder="e.g. admin2"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="input-group">
+                <label htmlFor="new-admin-password">Password</label>
+                <input
+                  id="new-admin-password"
+                  type="text"
+                  className="input-field"
+                  value={newAdmin.password}
+                  onChange={(e) => setNewAdmin({ ...newAdmin, password: e.target.value })}
+                  required
+                  placeholder="Set a strong password"
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="flex-center gap-2" style={{ marginTop: '1.75rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                  onClick={() => setShowAddAdminModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1 }}
+                  disabled={isSubmittingAdmin}
+                >
+                  {isSubmittingAdmin ? 'Adding...' : 'Add Admin'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CHANGE ADMIN PASSWORD MODAL */}
+      {editingAdmin && (
+        <div className="modal-overlay">
+          <div className="modal-content glass-panel glow-primary" style={{ maxWidth: '440px' }}>
+            <h2 style={{ marginBottom: '0.5rem' }}>Change Password</h2>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+              Changing the password for <strong style={{ color: 'var(--text-primary)' }}>{editingAdmin.username}</strong> will immediately invalidate all their active sessions.
+            </p>
+            <form onSubmit={handleUpdateAdminPassword}>
+              <div className="input-group">
+                <label htmlFor="edit-admin-password">New Password</label>
+                <input
+                  id="edit-admin-password"
+                  type="text"
+                  className="input-field"
+                  value={editingAdmin.password}
+                  onChange={(e) => setEditingAdmin({ ...editingAdmin, password: e.target.value })}
+                  required
+                  placeholder="Enter new password"
+                  autoComplete="new-password"
+                  autoFocus
+                />
+              </div>
+              <div className="flex-center gap-2" style={{ marginTop: '1.75rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                  onClick={() => setEditingAdmin(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1 }}
+                  disabled={isSubmittingAdmin}
+                >
+                  {isSubmittingAdmin ? 'Saving...' : 'Update Password'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

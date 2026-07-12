@@ -37,7 +37,16 @@ export default function Login({ onLoginSuccess }) {
         if (queryError) throw queryError;
 
         if (data) {
-          const sessionData = { role: 'admin', username: data.username };
+          if (data.is_active === false) {
+            setError('This admin account has been deactivated. Contact another admin.');
+            setLoading(false);
+            return;
+          }
+          const sessionData = {
+            role: 'admin',
+            username: data.username,
+            session_version: data.session_version ?? 1,
+          };
           localStorage.setItem('mmh_session', JSON.stringify(sessionData));
           onLoginSuccess(sessionData);
         } else {

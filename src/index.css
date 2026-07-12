@@ -571,6 +571,64 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
+/* Settings tab responsive */
+.settings-panel {
+  padding: 2rem;
+  max-width: 700px;
+  width: 100%;
+  margin-bottom: 2rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.settings-fee-input {
+  max-width: 300px;
+}
+
+.admin-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--glass-border);
+  flex-wrap: wrap;
+}
+
+.admin-user-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .settings-panel {
+    padding: 1.25rem;
+    max-width: 100%;
+  }
+
+  .settings-fee-input {
+    max-width: 100%;
+  }
+
+  .admin-user-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .admin-user-actions {
+    width: 100%;
+  }
+
+  .admin-user-actions .btn {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
 /* Utility classes */
 .flex-between {
   display: flex;
