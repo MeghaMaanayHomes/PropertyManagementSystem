@@ -1900,7 +1900,7 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
             {activeTab === 'settings' && (
               <div>
                 <div className="mb-4">
-                  <h1 style={{ fontSize: '1.75rem' }}>Portal Settings</h1>
+                  <h1 style={{ fontSize: '1.75rem' }}>Settings</h1>
                   <p style={{ color: 'var(--text-secondary)' }}>Manage your resident account settings</p>
                 </div>
 
