@@ -18,6 +18,9 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
   // Modal States
   const [editingFlat, setEditingFlat] = useState(null);
   const [recordingPayment, setRecordingPayment] = useState(null);
+  const [adminPaymentAttachment, setAdminPaymentAttachment] = useState(null);
+  const [adminPaymentAttachmentPreview, setAdminPaymentAttachmentPreview] = useState(null);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [newNotice, setNewNotice] = useState({ title: '', content: '' });
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [selectedComplaint, setSelectedComplaint] = useState(null);
@@ -399,7 +402,8 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
       } else if (req.request_type === 'payment_report') {
         const details = req.details || {};
         
-        // Upsert into maintenance_records
+        // Upsert into maintenance_records (no attachment_url column in DB;
+        // receipt files are stored in the payment-attachments bucket)
         const { error: paymentError } = await supabase
           .from('maintenance_records')
           .upsert({
@@ -468,9 +472,57 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
     }
   };
 
+  const startRecordingPayment = (flat_no, due, paid, status, record) => {
+    setAdminPaymentAttachment(null);
+    setAdminPaymentAttachmentPreview(null);
+    // Derive existing receipt URL from the bucket using deterministic path
+    const existingMonth = selectedMonth;
+    const { data: existingUrlData } = supabase.storage
+      .from('payment-attachments')
+      .getPublicUrl(`${flat_no}/${existingMonth}`);
+    setRecordingPayment({
+      flat_no: flat_no,
+      amount_due: due,
+      amount_paid: paid || due,
+      payment_status: status === 'Unpaid' ? 'Paid' : status,
+      payment_date: record && record.payment_date ? record.payment_date.substring(0, 10) : new Date().toISOString().substring(0, 10),
+      payment_method: record ? record.payment_method : 'UPI',
+      transaction_id: record ? record.transaction_id : '',
+      remarks: record ? record.remarks : '',
+      attachment_url: existingUrlData?.publicUrl || ''
+    });
+  };
+
+  const handleAdminPaymentAttachmentFile = (file) => {
+    if (!file) return;
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'application/pdf'];
+    if (!validTypes.includes(file.type) && !file.type.startsWith('image/')) {
+      alert('Only image files (JPG, PNG, GIF, WEBP) or PDF are allowed.');
+      return;
+    }
+    setAdminPaymentAttachment(file);
+    if (file.type.startsWith('image/')) {
+      setAdminPaymentAttachmentPreview(URL.createObjectURL(file));
+    } else {
+      setAdminPaymentAttachmentPreview(null);
+    }
+  };
+
   const handleRecordPayment = async (e) => {
     e.preventDefault();
+    setIsSubmittingPayment(true);
     try {
+      // Upload receipt to storage bucket using deterministic path: {flat_no}/{billing_month}
+      // This allows retrieving the URL later without needing a DB column.
+      if (adminPaymentAttachment) {
+        const storagePath = `${recordingPayment.flat_no}/${selectedMonth}`;
+        const { error: uploadError } = await supabase.storage
+          .from('payment-attachments')
+          .upload(storagePath, adminPaymentAttachment, { upsert: true });
+
+        if (uploadError) throw new Error('File upload failed: ' + uploadError.message);
+      }
+
       const record = {
         flat_no: recordingPayment.flat_no,
         billing_month: selectedMonth,
@@ -489,9 +541,13 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
 
       if (error) throw error;
       setRecordingPayment(null);
+      setAdminPaymentAttachment(null);
+      setAdminPaymentAttachmentPreview(null);
       fetchData();
     } catch (err) {
       alert('Error saving payment record: ' + err.message);
+    } finally {
+      setIsSubmittingPayment(false);
     }
   };
 
@@ -969,41 +1025,36 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
       {isMobileMenuOpen && (
         <div className="sidebar-backdrop" onClick={() => setIsMobileMenuOpen(false)}></div>
       )}
-
-      {/* Sidebar Drawer */}
-      <aside className={`sidebar glass-panel ${isMobileMenuOpen ? 'open' : ''}`} style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>
+      <aside className={`sidebar glass-panel ${isMobileMenuOpen ? 'open' : ''}`}>
         {/* Mobile menu close button */}
-        <div className="mobile-only" style={{ alignSelf: 'flex-end', marginBottom: '1rem' }}>
-          <button
-            onClick={() => setIsMobileMenuOpen(false)}
-            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '0.25rem' }}
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
+        <button
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="sidebar-close-btn"
+          aria-label="Close menu"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
 
-        <div style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div className="sidebar-header">
           <img 
             src="/building_header.png" 
             alt="Building Outline" 
-            style={{ height: '36px', width: 'auto' }} 
           />
           <div>
-            <h2 style={{ fontSize: '1.25rem', color: '#fff', margin: 0, fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '170px' }}>
+            <h2>
               {adminUsers.find(a => a.username === currentAdminUsername)?.name?.trim() || currentAdminUsername || 'Admin'}
             </h2>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>Admin</p>
+            <p>Admin</p>
           </div>
         </div>
 
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <nav className="sidebar-nav">
           <button
             onClick={() => handleTabChange('overview')}
             className={`btn ${activeTab === 'overview' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <rect x="3" y="3" width="7" height="9" rx="1"></rect>
@@ -1016,7 +1067,6 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
           <button
             onClick={() => handleTabChange('flats')}
             className={`btn ${activeTab === 'flats' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
@@ -1027,7 +1077,6 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
           <button
             onClick={() => handleTabChange('ledger')}
             className={`btn ${activeTab === 'ledger' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
               <path d="M6 3h12M6 8h12M6 13h8.5a4.5 4.5 0 0 0 0-9H6M6 13h3L18 21" />
@@ -1037,10 +1086,9 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
           <button
             onClick={() => handleTabChange('approvals')}
             className={`btn ${activeTab === 'approvals' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-              <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+              <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138z" />
             </svg>
             Approvals
             {approvals.filter(a => a.status === 'Pending').length > 0 && (
@@ -1052,7 +1100,6 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
           <button
             onClick={() => handleTabChange('notices')}
             className={`btn ${activeTab === 'notices' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
@@ -1063,7 +1110,6 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
           <button
             onClick={() => handleTabChange('complaints')}
             className={`btn ${activeTab === 'complaints' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
@@ -1078,7 +1124,6 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
           <button
             onClick={() => handleTabChange('contacts')}
             className={`btn ${activeTab === 'contacts' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
@@ -1088,7 +1133,6 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
           <button
             onClick={() => handleTabChange('settings')}
             className={`btn ${activeTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="3"></circle>
@@ -1096,22 +1140,21 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
             </svg>
             Settings
           </button>
-          
-                  <button
-          onClick={onLogout}
-          className="btn btn-secondary"
-          style={{ marginTop: 'auto', justifyContent: 'center' }}
-        >
-          <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-            <polyline points="16 17 21 12 16 7"></polyline>
-            <line x1="21" y1="12" x2="9" y2="12"></line>
-          </svg>
-          Log Out
-        </button>
         </nav>
 
-
+        <div className="sidebar-footer">
+          <button
+            onClick={onLogout}
+            className="btn btn-secondary logout-btn"
+          >
+            <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            Log Out
+          </button>
+        </div>
       </aside>
 
       {/* Main Content Area */}
@@ -1827,21 +1870,22 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                               <td style={{ padding: '1rem 0.75rem' }}>₹{due}</td>
                               <td style={{ padding: '1rem 0.75rem', color: 'var(--success)' }}>₹{paid}</td>
                               <td style={{ padding: '1rem 0.75rem' }}>{date}</td>
-                              <td style={{ padding: '1rem 0.75rem' }}>{method}</td>
+                              <td style={{ padding: '1rem 0.75rem' }}>
+                                {method}
+                                {record && (() => {
+                                  const { data: rd } = supabase.storage.from('payment-attachments').getPublicUrl(`${flat_no}/${selectedMonth}`);
+                                  return rd?.publicUrl ? (
+                                    <a href={rd.publicUrl} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '0.5rem', color: 'var(--primary)' }} title="View Receipt">
+                                      📎
+                                    </a>
+                                  ) : null;
+                                })()}
+                              </td>
                               <td style={{ padding: '1rem 0.75rem', textAlign: 'right' }}>
                                 <button
                                   className="btn btn-secondary"
                                   style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
-                                  onClick={() => setRecordingPayment({
-                                    flat_no: flat_no,
-                                    amount_due: due,
-                                    amount_paid: paid || due,
-                                    payment_status: status === 'Unpaid' ? 'Paid' : status,
-                                    payment_date: record && record.payment_date ? record.payment_date.substring(0, 10) : new Date().toISOString().substring(0, 10),
-                                    payment_method: record ? record.payment_method : 'UPI',
-                                    transaction_id: record ? record.transaction_id : '',
-                                    remarks: record ? record.remarks : ''
-                                  })}
+                                  onClick={() => startRecordingPayment(flat_no, due, paid, status, record)}
                                 >
                                   Record Payment
                                 </button>
@@ -1887,23 +1931,24 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span style={{ color: 'var(--text-muted)' }}>Method</span>
-                                <span style={{ color: 'var(--text-secondary)' }}>{method}</span>
+                                <span style={{ color: 'var(--text-secondary)' }}>
+                                  {method}
+                                  {record && (() => {
+                                    const { data: rd } = supabase.storage.from('payment-attachments').getPublicUrl(`${flat_no}/${selectedMonth}`);
+                                    return rd?.publicUrl ? (
+                                      <a href={rd.publicUrl} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '0.5rem', color: 'var(--primary)', textDecoration: 'none' }}>
+                                        📎 Receipt
+                                      </a>
+                                    ) : null;
+                                  })()}
+                                </span>
                               </div>
                             </div>
 
                             <button
                               className="btn btn-secondary"
                               style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }}
-                              onClick={() => setRecordingPayment({
-                                flat_no: flat_no,
-                                amount_due: due,
-                                amount_paid: paid || due,
-                                payment_status: status === 'Unpaid' ? 'Paid' : status,
-                                payment_date: record && record.payment_date ? record.payment_date.substring(0, 10) : new Date().toISOString().substring(0, 10),
-                                payment_method: record ? record.payment_method : 'UPI',
-                                transaction_id: record ? record.transaction_id : '',
-                                remarks: record ? record.remarks : ''
-                              })}
+                              onClick={() => startRecordingPayment(flat_no, due, paid, status, record)}
                             >
                               Record Payment
                             </button>
@@ -2888,12 +2933,89 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                 />
               </div>
 
+              {/* Attachment upload */}
+              <div className="input-group">
+                <label style={{ fontWeight: '600' }}>Upload Payment Receipt / Proof</label>
+                <div
+                  style={{
+                    border: '2px dashed var(--glass-border)',
+                    borderRadius: '10px',
+                    padding: '1.5rem',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    background: 'rgba(255, 255, 255, 0.01)',
+                    transition: 'var(--transition-smooth)'
+                  }}
+                  onClick={() => document.getElementById('admin-payment-attachment-input').click()}
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--primary)'; }}
+                  onDragLeave={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--glass-border)'; }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.style.borderColor = 'var(--glass-border)';
+                    const file = e.dataTransfer.files[0];
+                    if (file) handleAdminPaymentAttachmentFile(file);
+                  }}
+                >
+                  {adminPaymentAttachmentPreview ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', position: 'relative' }}>
+                      <img src={adminPaymentAttachmentPreview} alt="Receipt preview" style={{ maxHeight: '120px', borderRadius: '6px' }} />
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setAdminPaymentAttachment(null); setAdminPaymentAttachmentPreview(null); }}
+                        style={{
+                          position: 'absolute', top: '-10px', right: '-10px',
+                          background: 'var(--error, #ef4444)', border: 'none', borderRadius: '50%',
+                          width: '22px', height: '22px', cursor: 'pointer', color: 'white',
+                          fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}
+                      >✕</button>
+                    </div>
+                  ) : adminPaymentAttachment ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                      <svg width="32" height="32" fill="none" stroke="var(--primary)" strokeWidth="2" viewBox="0 0 24 24">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                      </svg>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: '600' }}>{adminPaymentAttachment.name}</span>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setAdminPaymentAttachment(null); setAdminPaymentAttachmentPreview(null); }}
+                        style={{ fontSize: '0.75rem', color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}>Remove</button>
+                    </div>
+                  ) : recordingPayment.attachment_url ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', position: 'relative' }}>
+                      <img src={recordingPayment.attachment_url} alt="Current receipt" style={{ maxHeight: '100px', borderRadius: '6px' }} />
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Current Attachment (click/drag to replace)</span>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setRecordingPayment({ ...recordingPayment, attachment_url: '' }); }}
+                        style={{
+                          position: 'absolute', top: '-10px', right: '-10px',
+                          background: 'var(--error, #ef4444)', border: 'none', borderRadius: '50%',
+                          width: '22px', height: '22px', cursor: 'pointer', color: 'white',
+                          fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}
+                      >✕</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)' }}>
+                      <svg width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+                      </svg>
+                      <span style={{ fontSize: '0.85rem' }}>Drag & drop your screenshot here</span>
+                      <span style={{ fontSize: '0.78rem' }}>or <span style={{ color: 'var(--primary)', fontWeight: '600' }}>click to browse</span></span>
+                      <span style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>JPG, PNG, GIF, WEBP, PDF</span>
+                    </div>
+                  )}
+                </div>
+                <input
+                  id="admin-payment-attachment-input"
+                  type="file"
+                  accept="image/*,application/pdf"
+                  style={{ display: 'none' }}
+                  onChange={(e) => { const file = e.target.files[0]; if (file) handleAdminPaymentAttachmentFile(file); }}
+                />
+              </div>
+
               <div className="flex-center gap-2" style={{ marginTop: '2rem' }}>
-                <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setRecordingPayment(null)}>
+                <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setRecordingPayment(null)} disabled={isSubmittingPayment}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                  Save Record
+                <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={isSubmittingPayment}>
+                  {isSubmittingPayment ? 'Saving Record...' : 'Save Record'}
                 </button>
               </div>
             </form>

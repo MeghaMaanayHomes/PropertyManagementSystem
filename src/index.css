@@ -134,6 +134,7 @@ h1, h2, h3, h4, h5, h6 {
 .sidebar {
   width: var(--sidebar-width);
   height: 100vh;
+  height: 100dvh;
   position: fixed;
   top: 0;
   left: 0;
@@ -143,7 +144,82 @@ h1, h2, h3, h4, h5, h6 {
   padding: 1.5rem;
   z-index: 50;
   flex-shrink: 0;
+  overflow: hidden; /* Prevent scrolling on the main sidebar container */
+}
+
+/* Sidebar Header */
+.sidebar-header {
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.sidebar-header img {
+  height: 36px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.sidebar-header h2 {
+  font-size: 1.25rem;
+  color: #fff;
+  margin: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 170px;
+}
+
+.sidebar-header p {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* Sidebar Navigation */
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
+  margin-bottom: 1.5rem;
+  /* Hide scrollbar but maintain scrolling functionality */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;  /* IE and Edge */
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
+
+.sidebar-nav button {
+  width: 100%;
+  justify-content: flex-start !important;
+  padding: 0.75rem 1rem !important;
+}
+
+/* Sidebar Footer */
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--glass-border);
+  flex-shrink: 0;
+  width: 100%;
+}
+
+.sidebar-footer .logout-btn {
+  width: 100%;
+  justify-content: center !important;
+}
+
+/* Close Button (Hidden on Desktop) */
+.sidebar-close-btn {
+  display: none;
 }
 
 /* Inputs and Buttons */
@@ -422,6 +498,7 @@ h1, h2, h3, h4, h5, h6 {
     bottom: 0;
     width: 280px !important;
     height: 100vh !important;
+    height: 100dvh !important;
     background: rgba(6, 8, 20, 0.95) !important;
     backdrop-filter: blur(24px) !important;
     -webkit-backdrop-filter: blur(24px) !important;
@@ -433,7 +510,7 @@ h1, h2, h3, h4, h5, h6 {
     transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
     display: flex !important;
     flex-direction: column !important;
-    padding: 1.5rem !important;
+    padding: 1.25rem 1rem !important; /* Slightly more compact padding */
     margin-left: 0 !important;
     overflow: hidden !important;
   }
@@ -462,36 +539,63 @@ h1, h2, h3, h4, h5, h6 {
     to { opacity: 1; }
   }
 
-  .sidebar nav {
-    flex-direction: column !important;
-    width: 100% !important;
-    gap: 0.25rem !important;
-    overflow-x: visible !important;
-    overflow-y: auto !important;
-    flex: 1 !important;
-    min-height: 0 !important;
+  /* Close Button styling on mobile */
+  .sidebar-close-btn {
+    display: flex !important;
+    position: absolute;
+    top: 1.25rem;
+    right: 1rem;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem;
+    align-items: center;
+    justify-content: center;
+    z-index: 210;
+    transition: var(--transition-smooth);
   }
 
-  .sidebar nav button {
+  .sidebar-close-btn:hover {
+    color: var(--text-primary);
+  }
+
+  /* Compact header on mobile */
+  .sidebar-header {
+    margin-bottom: 1.25rem !important;
+    padding-right: 2rem; /* Ensure space for absolute positioned close button */
+  }
+
+  .sidebar-header img {
+    height: 32px !important;
+  }
+
+  .sidebar-header h2 {
+    font-size: 1.15rem !important;
+  }
+
+  /* Sidebar Navigation and Button sizing on mobile */
+  .sidebar-nav {
+    gap: 0.35rem !important;
+    margin-bottom: 1rem !important;
+  }
+
+  .sidebar-nav button {
     width: 100% !important;
     justify-content: flex-start !important;
     padding: 0.6rem 0.85rem !important;
     font-size: 0.88rem !important;
   }
 
-  .sidebar .btn-secondary {
-    margin-top: 0 !important;
+  /* Sidebar Footer sizing on mobile */
+  .sidebar-footer {
+    padding-top: 1rem !important;
+  }
+
+  .sidebar-footer .logout-btn {
     width: 100% !important;
     padding: 0.65rem !important;
     font-size: 0.9rem !important;
-    flex-shrink: 0 !important;
-  }
-
-  /* Thin divider above logout on mobile */
-  .sidebar > .btn-secondary:last-child {
-    border-top: 1px solid var(--glass-border) !important;
-    padding-top: 0.75rem !important;
-    margin-top: 0.5rem !important;
   }
 
   .flat-grid {
@@ -599,20 +703,18 @@ h1, h2, h3, h4, h5, h6 {
 
 .admin-user-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 0.75rem;
   padding: 0.85rem 1rem;
   border-radius: 10px;
   background: rgba(255,255,255,0.03);
   border: 1px solid var(--glass-border);
-  flex-wrap: wrap;
 }
 
 .admin-user-actions {
   display: flex;
   gap: 0.5rem;
-  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 768px) {
@@ -625,19 +727,11 @@ h1, h2, h3, h4, h5, h6 {
     max-width: 100%;
   }
 
-  .admin-user-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.75rem;
-  }
-
-  .admin-user-actions {
-    width: 100%;
-  }
-
   .admin-user-actions .btn {
-    flex: 1;
-    justify-content: center;
+    flex: 1 1 calc(50% - 0.25rem) !important;
+    justify-content: center !important;
+    font-size: 0.8rem !important;
+    padding: 0.45rem 0.6rem !important;
   }
 }
 

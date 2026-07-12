@@ -4,7 +4,7 @@
 -- Paste this script in the SQL Editor of your Supabase Dashboard:
 -- https://supabase.com/dashboard/project/rstuapmplhviybvhkoqq
 -- ==========================================
--- NOTE: If you already created the tables previously, run these update SQL queries:
+-- UPGRADE NOTES (run these if upgrading an existing database):
 -- ALTER TABLE public.flats ADD COLUMN IF NOT EXISTS tenant_phone TEXT DEFAULT '';
 -- ALTER TABLE public.flats ADD COLUMN IF NOT EXISTS tenant_email TEXT DEFAULT '';
 -- ALTER TABLE public.flats ADD COLUMN IF NOT EXISTS occupancy_from DATE;
@@ -14,9 +14,12 @@
 -- UPDATE public.flats SET tenant_password = 'tenant' || flat_no WHERE tenant_password IS NULL;
 -- ALTER TABLE public.flats ALTER COLUMN owner_password SET NOT NULL;
 -- ALTER TABLE public.flats ALTER COLUMN tenant_password SET NOT NULL;
--- ==========================================
--- NEW: Add session_version to admins for session invalidation on password change:
 -- ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1;
+-- ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+-- ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '';
+-- NOTE: Receipt files are stored in the 'payment-attachments' Storage bucket using
+--       the path pattern {flat_no}/{billing_month} (e.g. '001/2026-07').
+--       No attachment_url column is needed in maintenance_records.
 -- ==========================================
 
 -- 1. Create flats table
@@ -26,13 +29,13 @@ CREATE TABLE IF NOT EXISTS public.flats (
     tenant_name TEXT DEFAULT '',
     is_vacant BOOLEAN DEFAULT TRUE,
     is_owner_occupied BOOLEAN DEFAULT TRUE,
-    phone_number TEXT DEFAULT '', -- Owner Phone
-    email TEXT DEFAULT '', -- Owner Email
+    phone_number TEXT DEFAULT '',       -- Owner phone
+    email TEXT DEFAULT '',              -- Owner email
     tenant_phone TEXT DEFAULT '',
     tenant_email TEXT DEFAULT '',
     occupancy_from DATE,
-    owner_password TEXT NOT NULL, -- Default: 'owner' + flat_no (e.g. 'owner001')
-    tenant_password TEXT NOT NULL, -- Default: 'tenant' + flat_no (e.g. 'tenant001')
+    owner_password TEXT NOT NULL,       -- Default: 'owner' + flat_no (e.g. 'owner001')
+    tenant_password TEXT NOT NULL,      -- Default: 'tenant' + flat_no (e.g. 'tenant001')
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
@@ -50,25 +53,22 @@ CREATE TABLE IF NOT EXISTS public.admins (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- If upgrading an existing database, run:
--- ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1;
--- ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
--- ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '';
-
 -- 3. Insert default admin credentials
 INSERT INTO public.admins (username, password, name, session_version, is_active)
 VALUES ('admin', 'admin123', 'Administrator', 1, TRUE)
 ON CONFLICT (username) DO NOTHING;
 
 -- 4. Create maintenance_records table to track monthly billing and payments
+--    Receipt files are stored in the 'payment-attachments' Storage bucket at
+--    the path {flat_no}/{billing_month} — no attachment_url column needed here.
 CREATE TABLE IF NOT EXISTS public.maintenance_records (
     flat_no TEXT REFERENCES public.flats(flat_no) ON DELETE CASCADE,
-    billing_month TEXT, -- Format: 'YYYY-MM', e.g. '2026-07'
+    billing_month TEXT NOT NULL,        -- Format: 'YYYY-MM', e.g. '2026-07'
     amount_due NUMERIC(10, 2) DEFAULT 2000.00,
     amount_paid NUMERIC(10, 2) DEFAULT 0.00,
     payment_status TEXT DEFAULT 'Unpaid' CHECK (payment_status IN ('Unpaid', 'Partially Paid', 'Paid')),
     payment_date TIMESTAMP WITH TIME ZONE,
-    payment_method TEXT DEFAULT '', -- 'UPI', 'Cash', 'Bank Transfer', etc.
+    payment_method TEXT DEFAULT '',     -- 'UPI', 'Cash', 'Bank Transfer', etc.
     transaction_id TEXT DEFAULT '',
     remarks TEXT DEFAULT '',
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS public.announcements (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- 6. Create complaints table (service requests)
+-- 6. Create complaints table (service requests / maintenance tickets)
 CREATE TABLE IF NOT EXISTS public.complaints (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     flat_no TEXT REFERENCES public.flats(flat_no) ON DELETE CASCADE,
@@ -93,24 +93,7 @@ CREATE TABLE IF NOT EXISTS public.complaints (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- 7. Disable Row Level Security (RLS) to allow simple anon key operations
-ALTER TABLE public.flats DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.admins DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.maintenance_records DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.announcements DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.complaints DISABLE ROW LEVEL SECURITY;
-
--- 8. Populate all 40 flats (001-008 to 401-408)
-INSERT INTO public.flats (flat_no, is_vacant, owner_password, tenant_password)
-VALUES
-('001', true, 'owner001', 'tenant001'), ('002', true, 'owner002', 'tenant002'), ('003', true, 'owner003', 'tenant003'), ('004', true, 'owner004', 'tenant004'), ('005', true, 'owner005', 'tenant005'), ('006', true, 'owner006', 'tenant006'), ('007', true, 'owner007', 'tenant007'), ('008', true, 'owner008', 'tenant008'),
-('101', true, 'owner101', 'tenant101'), ('102', true, 'owner102', 'tenant102'), ('103', true, 'owner103', 'tenant103'), ('104', true, 'owner104', 'tenant104'), ('105', true, 'owner105', 'tenant105'), ('106', true, 'owner106', 'tenant106'), ('107', true, 'owner107', 'tenant107'), ('108', true, 'owner108', 'tenant108'),
-('201', true, 'owner201', 'tenant201'), ('202', true, 'owner202', 'tenant202'), ('203', true, 'owner203', 'tenant203'), ('204', true, 'owner204', 'tenant204'), ('205', true, 'owner205', 'tenant205'), ('206', true, 'owner206', 'tenant206'), ('207', true, 'owner207', 'tenant207'), ('208', true, 'owner208', 'tenant208'),
-('301', true, 'owner301', 'tenant301'), ('302', true, 'owner302', 'tenant302'), ('303', true, 'owner303', 'tenant303'), ('304', true, 'owner304', 'tenant304'), ('305', true, 'owner305', 'tenant305'), ('306', true, 'owner306', 'tenant306'), ('307', true, 'owner307', 'tenant307'), ('308', true, 'owner308', 'tenant308'),
-('401', true, 'owner401', 'tenant401'), ('402', true, 'owner402', 'tenant402'), ('403', true, 'owner403', 'tenant403'), ('404', true, 'owner404', 'tenant404'), ('405', true, 'owner405', 'tenant405'), ('406', true, 'owner406', 'tenant406'), ('407', true, 'owner407', 'tenant407'), ('408', true, 'owner408', 'tenant408')
-ON CONFLICT (flat_no) DO NOTHING;
-
--- 9. Create tenant_history table to track past tenants
+-- 7. Create tenant_history table to track past tenants per flat
 CREATE TABLE IF NOT EXISTS public.tenant_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     flat_no TEXT REFERENCES public.flats(flat_no) ON DELETE CASCADE,
@@ -122,26 +105,7 @@ CREATE TABLE IF NOT EXISTS public.tenant_history (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Disable Row Level Security (RLS) for tenant_history
-ALTER TABLE public.tenant_history DISABLE ROW LEVEL SECURITY;
-
--- 10. Create approvals table to track requests that require admin verification
-CREATE TABLE IF NOT EXISTS public.approvals (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    flat_no TEXT REFERENCES public.flats(flat_no) ON DELETE CASCADE,
-    request_type TEXT NOT NULL, -- 'occupancy_change' or 'payment_report'
-    status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Approved', 'Rejected')),
-    details JSONB NOT NULL,
-    raised_by TEXT NOT NULL, -- 'owner' or 'tenant'
-    admin_comments TEXT DEFAULT '',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-);
-
--- Disable Row Level Security (RLS) for approvals
-ALTER TABLE public.approvals DISABLE ROW LEVEL SECURITY;
-
--- 11. Create owner_history table to track past owners of flats
+-- 8. Create owner_history table to track past owners of flats
 CREATE TABLE IF NOT EXISTS public.owner_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     flat_no TEXT REFERENCES public.flats(flat_no) ON DELETE CASCADE,
@@ -152,48 +116,37 @@ CREATE TABLE IF NOT EXISTS public.owner_history (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Disable Row Level Security (RLS) for owner_history
-ALTER TABLE public.owner_history DISABLE ROW LEVEL SECURITY;
+-- 9. Create approvals table (requests requiring admin action)
+--    request_type values:
+--      'payment_report'      - resident self-reports a payment (pending admin confirmation)
+--      'occupancy_change'    - resident reports a tenant move-in / move-out
+--      'ownership_transfer'  - owner requests transfer of ownership to a new person
+--      'contact_suggestion'  - resident suggests adding a contact to the directory
+CREATE TABLE IF NOT EXISTS public.approvals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    flat_no TEXT REFERENCES public.flats(flat_no) ON DELETE CASCADE,
+    request_type TEXT NOT NULL,
+    status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Approved', 'Rejected')),
+    details JSONB NOT NULL DEFAULT '{}',
+    raised_by TEXT NOT NULL,            -- 'owner' or 'tenant'
+    admin_comments TEXT DEFAULT '',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
 
--- 12. Create settings table for global portal configuration
+-- 10. Create settings table for global portal configuration
 CREATE TABLE IF NOT EXISTS public.settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Disable Row Level Security (RLS) for settings
-ALTER TABLE public.settings DISABLE ROW LEVEL SECURITY;
-
--- Seed default maintenance fee setting
+-- Seed default maintenance fee
 INSERT INTO public.settings (key, value)
 VALUES ('maintenance_amount', '2000')
 ON CONFLICT (key) DO NOTHING;
 
-
--- Create the bucket
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-  'payment-attachments',
-  'payment-attachments',
-  true,
-  5242880,
-  ARRAY['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'application/pdf']
-)
-ON CONFLICT (id) DO NOTHING;
-
--- Allow anyone to upload
-CREATE POLICY "Allow public uploads" ON storage.objects
-  FOR INSERT TO anon, authenticated
-  WITH CHECK (bucket_id = 'payment-attachments');
-
--- Allow anyone to read
-CREATE POLICY "Allow public reads" ON storage.objects
-  FOR SELECT TO anon, authenticated
-  USING (bucket_id = 'payment-attachments');
-
-
--- 13. Create contacts table (emergency/apartment contacts directory)
+-- 11. Create contacts table (emergency / apartment contacts directory)
 CREATE TABLE IF NOT EXISTS public.contacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
@@ -202,6 +155,53 @@ CREATE TABLE IF NOT EXISTS public.contacts (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Disable Row Level Security (RLS) for contacts
+-- 12. Disable Row Level Security on all tables
+--     (using anon key with no auth; enable RLS + policies if you add Supabase Auth later)
+ALTER TABLE public.flats DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admins DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.maintenance_records DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.announcements DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.complaints DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tenant_history DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.owner_history DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.approvals DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.settings DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.contacts DISABLE ROW LEVEL SECURITY;
 
+-- 13. Populate all 40 flats (Ground floor 001–008, Floors 1–4: 101–408)
+INSERT INTO public.flats (flat_no, is_vacant, owner_password, tenant_password)
+VALUES
+('001', true, 'owner001', 'tenant001'), ('002', true, 'owner002', 'tenant002'), ('003', true, 'owner003', 'tenant003'), ('004', true, 'owner004', 'tenant004'), ('005', true, 'owner005', 'tenant005'), ('006', true, 'owner006', 'tenant006'), ('007', true, 'owner007', 'tenant007'), ('008', true, 'owner008', 'tenant008'),
+('101', true, 'owner101', 'tenant101'), ('102', true, 'owner102', 'tenant102'), ('103', true, 'owner103', 'tenant103'), ('104', true, 'owner104', 'tenant104'), ('105', true, 'owner105', 'tenant105'), ('106', true, 'owner106', 'tenant106'), ('107', true, 'owner107', 'tenant107'), ('108', true, 'owner108', 'tenant108'),
+('201', true, 'owner201', 'tenant201'), ('202', true, 'owner202', 'tenant202'), ('203', true, 'owner203', 'tenant203'), ('204', true, 'owner204', 'tenant204'), ('205', true, 'owner205', 'tenant205'), ('206', true, 'owner206', 'tenant206'), ('207', true, 'owner207', 'tenant207'), ('208', true, 'owner208', 'tenant208'),
+('301', true, 'owner301', 'tenant301'), ('302', true, 'owner302', 'tenant302'), ('303', true, 'owner303', 'tenant303'), ('304', true, 'owner304', 'tenant304'), ('305', true, 'owner305', 'tenant305'), ('306', true, 'owner306', 'tenant306'), ('307', true, 'owner307', 'tenant307'), ('308', true, 'owner308', 'tenant308'),
+('401', true, 'owner401', 'tenant401'), ('402', true, 'owner402', 'tenant402'), ('403', true, 'owner403', 'tenant403'), ('404', true, 'owner404', 'tenant404'), ('405', true, 'owner405', 'tenant405'), ('406', true, 'owner406', 'tenant406'), ('407', true, 'owner407', 'tenant407'), ('408', true, 'owner408', 'tenant408')
+ON CONFLICT (flat_no) DO NOTHING;
+
+-- 14. Storage bucket: payment-attachments
+--     Files are uploaded at the path: {flat_no}/{billing_month}
+--     e.g. '001/2026-07' — one file per flat per month, overwritten on update.
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'payment-attachments',
+  'payment-attachments',
+  true,
+  5242880, -- 5 MB
+  ARRAY['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'application/pdf']
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- Allow anonymous users to upload receipts
+CREATE POLICY IF NOT EXISTS "Allow public uploads"
+  ON storage.objects FOR INSERT TO anon, authenticated
+  WITH CHECK (bucket_id = 'payment-attachments');
+
+-- Allow anonymous users to overwrite/update receipts
+CREATE POLICY IF NOT EXISTS "Allow public updates"
+  ON storage.objects FOR UPDATE TO anon, authenticated
+  USING (bucket_id = 'payment-attachments');
+
+-- Allow anyone to read receipt files
+CREATE POLICY IF NOT EXISTS "Allow public reads"
+  ON storage.objects FOR SELECT TO anon, authenticated
+  USING (bucket_id = 'payment-attachments');

@@ -90,9 +90,11 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
 
   const flatNo = session.flatNo;
 
+  // Fetch all data once on mount. Individual actions that mutate data call
+  // fetchResidentData() themselves to refresh after the mutation.
   useEffect(() => {
     fetchResidentData();
-  }, [activeTab]);
+  }, []);
 
   const fetchResidentData = async () => {
     setLoading(true);
@@ -107,19 +109,6 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
       if (flatError) throw flatError;
 
       if (flatData) {
-        if (session.role === 'owner') {
-          if (flatData.owner_name !== session.flatDetails?.owner_name || flatData.owner_password !== session.flatDetails?.owner_password) {
-            alert("Your session has expired (ownership details or password changed). Logging out...");
-            onLogout();
-            return;
-          }
-        } else if (session.role === 'tenant') {
-          if (flatData.tenant_name !== session.flatDetails?.tenant_name || flatData.tenant_password !== session.flatDetails?.tenant_password) {
-            alert("Your session has expired (tenant details or password changed). Logging out...");
-            onLogout();
-            return;
-          }
-        }
         setFlatDetails(flatData);
       }
 
@@ -544,41 +533,38 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
       )}
 
       {/* Sidebar Drawer */}
-      <aside className={`sidebar glass-panel ${isMobileMenuOpen ? 'open' : ''}`} style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>
+      <aside className={`sidebar glass-panel ${isMobileMenuOpen ? 'open' : ''}`}>
         {/* Mobile menu close button */}
-        <div className="mobile-only" style={{ alignSelf: 'flex-end', marginBottom: '1rem' }}>
-          <button
-            onClick={() => setIsMobileMenuOpen(false)}
-            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '0.25rem' }}
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
+        <button
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="sidebar-close-btn"
+          aria-label="Close menu"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
 
-        <div style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div className="sidebar-header">
           <img 
             src="/building_header.png" 
             alt="Building Outline" 
-            style={{ height: '36px', width: 'auto' }} 
           />
           <div>
-            <h2 style={{ fontSize: '1.25rem', color: '#fff', margin: 0, fontWeight: '600' }}>
+            <h2>
               Flat {flatNo}
             </h2>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+            <p>
               {session.role === 'owner' ? 'Owner' : 'Tenant'}
             </p>
           </div>
         </div>
 
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <nav className="sidebar-nav">
           <button
             onClick={() => handleTabChange('overview')}
             className={`btn ${activeTab === 'overview' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
@@ -589,7 +575,6 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
           <button
             onClick={() => handleTabChange('map')}
             className={`btn ${activeTab === 'map' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <rect x="3" y="3" width="7" height="9" rx="1"></rect>
@@ -602,7 +587,6 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
           <button
             onClick={() => handleTabChange('payments')}
             className={`btn ${activeTab === 'payments' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
               <path d="M6 3h12M6 8h12M6 13h8.5a4.5 4.5 0 0 0 0-9H6M6 13h3L18 21" />
@@ -612,7 +596,6 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
           <button
             onClick={() => handleTabChange('notices')}
             className={`btn ${activeTab === 'notices' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
@@ -628,7 +611,6 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
           <button
             onClick={() => handleTabChange('complaints')}
             className={`btn ${activeTab === 'complaints' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
@@ -638,17 +620,15 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
           <button
             onClick={() => handleTabChange('approvals')}
             className={`btn ${activeTab === 'approvals' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-              <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+              <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138z" />
             </svg>
             Approvals
           </button>
           <button
             onClick={() => handleTabChange('contacts')}
             className={`btn ${activeTab === 'contacts' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
@@ -658,7 +638,6 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
           <button
             onClick={() => handleTabChange('settings')}
             className={`btn ${activeTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
           >
             <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="3"></circle>
@@ -666,22 +645,21 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
             </svg>
             Settings
           </button>
-
-
-        <button
-          onClick={onLogout}
-          className="btn btn-secondary"
-          style={{ marginTop: 'auto', justifyContent: 'center' }}
-        >
-          <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-            <polyline points="16 17 21 12 16 7"></polyline>
-            <line x1="21" y1="12" x2="9" y2="12"></line>
-          </svg>
-          Log Out
-        </button>
         </nav>
 
+        <div className="sidebar-footer">
+          <button
+            onClick={onLogout}
+            className="btn btn-secondary logout-btn"
+          >
+            <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            Log Out
+          </button>
+        </div>
       </aside>
 
       {/* Main Content Area */}
@@ -689,7 +667,7 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
         {loading ? (
           <div className="flex-center" style={{ height: '70vh', flexDirection: 'column', gap: '1rem' }}>
             <div style={{ width: '40px', height: '40px', border: '3px solid var(--glass-border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
-            <p style={{ color: 'var(--text-secondary)' }}>Loading portal...</p>
+            <p style={{ color: 'var(--text-secondary)' }}>Loading...</p>
           </div>
         ) : (
           <>
@@ -1339,7 +1317,17 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
                                     <td style={{ padding: '0.75rem' }}>&#8377;{record.amount_due}</td>
                                     <td style={{ padding: '0.75rem', color: 'var(--success)' }}>&#8377;{record.amount_paid}</td>
                                     <td style={{ padding: '0.75rem' }}>{date}</td>
-                                    <td style={{ padding: '0.75rem' }}>{record.payment_method || '-'}</td>
+                                    <td style={{ padding: '0.75rem' }}>
+                                      {record.payment_method || '-'}
+                                      {(() => {
+                                        const { data: rd } = supabase.storage.from('payment-attachments').getPublicUrl(`${flatNo}/${record.billing_month}`);
+                                        return rd?.publicUrl ? (
+                                          <a href={rd.publicUrl} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '0.5rem', color: 'var(--primary)' }} title="View Receipt">
+                                            📎
+                                          </a>
+                                        ) : null;
+                                      })()}
+                                    </td>
                                     <td style={{ padding: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '0.8rem' }}>{record.transaction_id || '-'}</td>
                                   </tr>
                                 );
@@ -1367,7 +1355,17 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
                                   <div style={{ color: 'var(--text-secondary)' }}>Payment Date</div>
                                   <div>{date}</div>
                                   <div style={{ color: 'var(--text-secondary)' }}>Method</div>
-                                  <div>{record.payment_method || '-'}</div>
+                                  <div>
+                                    {record.payment_method || '-'}
+                                    {(() => {
+                                      const { data: rd } = supabase.storage.from('payment-attachments').getPublicUrl(`${flatNo}/${record.billing_month}`);
+                                      return rd?.publicUrl ? (
+                                        <a href={rd.publicUrl} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '0.5rem', color: 'var(--primary)', textDecoration: 'none' }}>
+                                          📎 Receipt
+                                        </a>
+                                      ) : null;
+                                    })()}
+                                  </div>
                                   {record.transaction_id && (
                                     <>
                                       <div style={{ color: 'var(--text-secondary)' }}>Txn ID</div>
