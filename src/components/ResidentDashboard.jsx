@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase';
 
-export default function ResidentDashboard({ session, onLogout }) {
-  const [activeTab, setActiveTab] = useState('overview');
+export default function ResidentDashboard({ session, onLogout, initialTab = 'overview' }) {
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [flatDetails, setFlatDetails] = useState(session.flatDetails || {});
   const [flats, setFlats] = useState([]);
   const [payments, setPayments] = useState([]);
@@ -26,6 +28,7 @@ export default function ResidentDashboard({ session, onLogout }) {
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
+    navigate(`/${tab}`, { replace: true });
     setContactsSearch('');
     setShowAddContactModal(false);
     setIsMobileMenuOpen(false);
@@ -565,7 +568,9 @@ export default function ResidentDashboard({ session, onLogout }) {
             <h2 style={{ fontSize: '1.25rem', color: '#fff', margin: 0, fontWeight: '600' }}>
               Flat {flatNo}
             </h2>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>Portal</p>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+              {session.role === 'owner' ? 'Owner' : 'Tenant'}
+            </p>
           </div>
         </div>
 
@@ -661,7 +666,7 @@ export default function ResidentDashboard({ session, onLogout }) {
             </svg>
             Settings
           </button>
-        </nav>
+
 
         <button
           onClick={onLogout}
@@ -675,6 +680,8 @@ export default function ResidentDashboard({ session, onLogout }) {
           </svg>
           Log Out
         </button>
+        </nav>
+
       </aside>
 
       {/* Main Content Area */}

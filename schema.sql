@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS public.flats (
 CREATE TABLE IF NOT EXISTS public.admins (
     username TEXT PRIMARY KEY,
     password TEXT NOT NULL,
+    name TEXT DEFAULT '',
     -- session_version increments on every password change or deactivation;
     -- stored in localStorage session so any active session with an older
     -- version is automatically invalidated.
@@ -52,10 +53,11 @@ CREATE TABLE IF NOT EXISTS public.admins (
 -- If upgrading an existing database, run:
 -- ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1;
 -- ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+-- ALTER TABLE public.admins ADD COLUMN IF NOT EXISTS name TEXT DEFAULT '';
 
 -- 3. Insert default admin credentials
-INSERT INTO public.admins (username, password, session_version, is_active)
-VALUES ('admin', 'admin123', 1, TRUE)
+INSERT INTO public.admins (username, password, name, session_version, is_active)
+VALUES ('admin', 'admin123', 'Administrator', 1, TRUE)
 ON CONFLICT (username) DO NOTHING;
 
 -- 4. Create maintenance_records table to track monthly billing and payments

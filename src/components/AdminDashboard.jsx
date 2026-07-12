@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase';
 
-export default function AdminDashboard({ session, onLogout }) {
-  const [activeTab, setActiveTab] = useState('overview');
+export default function AdminDashboard({ session, onLogout, initialTab = 'overview' }) {
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [flats, setFlats] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
@@ -48,8 +50,9 @@ export default function AdminDashboard({ session, onLogout }) {
   // Admin User Management States
   const [adminUsers, setAdminUsers] = useState([]);
   const [showAddAdminModal, setShowAddAdminModal] = useState(false);
-  const [newAdmin, setNewAdmin] = useState({ username: '', password: '' });
-  const [editingAdmin, setEditingAdmin] = useState(null); // { username, password }
+  const [newAdmin, setNewAdmin] = useState({ username: '', password: '', name: '' });
+  const [editingAdmin, setEditingAdmin] = useState(null); // { username, name, password, changePassword }
+  const [resettingAdminPassword, setResettingAdminPassword] = useState(null); // { username, password }
   const [isSubmittingAdmin, setIsSubmittingAdmin] = useState(false);
 
   // Statistics
@@ -66,6 +69,7 @@ export default function AdminDashboard({ session, onLogout }) {
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
+    navigate(`/${tab}`, { replace: true });
     setEditingFlat(null);
     setRecordingPayment(null);
     setSelectedComplaint(null);
@@ -122,8 +126,21 @@ export default function AdminDashboard({ session, onLogout }) {
         supabase.from('approvals').select('*').order('created_at', { ascending: false }),
         supabase.from('settings').select('*'),
         supabase.from('contacts').select('*').order('name', { ascending: true }).then(r => r).catch(() => ({ data: [], error: null })),
-        supabase.from('admins').select('username, is_active, created_at').order('created_at', { ascending: true }).then(r => r).catch(() => ({ data: [], error: null })),
-      ]);
+        // Admins query — try with is_active, fall back if column missing
+        (async () => {
+          const r = await supabase
+            .from('admins')
+            .select('username, name, is_active, created_at')
+            .order('created_at', { ascending: true });
+          if (r.error?.code === '42703') {
+            // new columns not yet added — fetch without them
+            return supabase
+              .from('admins')
+              .select('username, created_at')
+              .order('created_at', { ascending: true });
+          }
+          return r;
+        })(),      ]);
 
       if (flatsError) throw flatsError;
       if (recordsError) throw recordsError;
@@ -480,6 +497,13 @@ export default function AdminDashboard({ session, onLogout }) {
 
   // ---- Admin User Management ----
 
+  // Helper: returns the username of the currently logged-in admin
+  const currentAdminUsername = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('mmh_session') || '{}').username ?? null;
+    } catch { return null; }
+  })();
+
   const handleAddAdmin = async (e) => {
     e.preventDefault();
     const uname = newAdmin.username.trim().toLowerCase();
@@ -491,13 +515,13 @@ export default function AdminDashboard({ session, onLogout }) {
     try {
       const { error } = await supabase
         .from('admins')
-        .insert([{ username: uname, password: newAdmin.password, session_version: 1 }]);
+        .insert([{ username: uname, password: newAdmin.password, name: newAdmin.name.trim(), session_version: 1, is_active: true }]);
 
       if (error) {
         if (error.code === '23505') throw new Error(`Username "${uname}" already exists.`);
         throw error;
       }
-      setNewAdmin({ username: '', password: '' });
+      setNewAdmin({ username: '', password: '', name: '' });
       setShowAddAdminModal(false);
       fetchData();
     } catch (err) {
@@ -507,71 +531,80 @@ export default function AdminDashboard({ session, onLogout }) {
     }
   };
 
-  const handleUpdateAdminPassword = async (e) => {
+  const handleUpdateAdmin = async (e) => {
     e.preventDefault();
-    if (!editingAdmin?.password?.trim()) {
-      alert('New password cannot be empty.');
-      return;
-    }
-    // Prevent an admin from locking themselves out, but still allow
-    // changing their own password (they'll be re-prompted to log in).
     setIsSubmittingAdmin(true);
     try {
-      // Increment session_version so every active session for this admin
-      // is immediately invalidated (App.jsx polls and detects the mismatch).
-      const { data: current, error: fetchErr } = await supabase
-        .from('admins')
-        .select('session_version')
-        .eq('username', editingAdmin.username)
-        .maybeSingle();
-
-      if (fetchErr) throw fetchErr;
-
-      const newVersion = (current?.session_version ?? 1) + 1;
-
       const { error } = await supabase
         .from('admins')
-        .update({ password: editingAdmin.password.trim(), session_version: newVersion })
+        .update({ name: editingAdmin.name.trim() })
         .eq('username', editingAdmin.username);
 
       if (error) throw error;
 
-      // If the currently-logged-in admin changed their own password,
-      // log them out immediately so they re-authenticate with the new password.
-      const storedRaw = localStorage.getItem('mmh_session');
-      if (storedRaw) {
-        try {
-          const stored = JSON.parse(storedRaw);
-          if (stored.username === editingAdmin.username) {
-            alert('Your own password was changed. You will now be logged out.');
-            setEditingAdmin(null);
-            onLogout();
-            return;
-          }
-        } catch { /* ignore */ }
-      }
-
       setEditingAdmin(null);
-      alert(`Password updated for "${editingAdmin.username}". Their active sessions have been invalidated.`);
       fetchData();
     } catch (err) {
-      alert('Error updating password: ' + err.message);
+      alert('Error updating admin: ' + err.message);
+    } finally {
+      setIsSubmittingAdmin(false);
+    }
+  };
+
+  const handleResetAdminPassword = async (e) => {
+    e.preventDefault();
+    if (!resettingAdminPassword?.password?.trim()) {
+      alert('New password cannot be empty.');
+      return;
+    }
+    // Only block self-reset when it wasn't explicitly initiated as self-change
+    if (!resettingAdminPassword.isSelf && resettingAdminPassword.username === currentAdminUsername) {
+      alert('You cannot reset your own password. Ask another admin to do it.');
+      return;
+    }
+    setIsSubmittingAdmin(true);
+    try {
+      const { data: current, error: fetchErr } = await supabase
+        .from('admins')
+        .select('session_version')
+        .eq('username', resettingAdminPassword.username)
+        .maybeSingle();
+
+      if (fetchErr && fetchErr.code !== '42703') throw fetchErr;
+
+      const newVersion = (current?.session_version ?? 1) + 1;
+      const updatePayload = { password: resettingAdminPassword.password.trim() };
+      if (!fetchErr) updatePayload.session_version = newVersion;
+
+      const { error } = await supabase
+        .from('admins')
+        .update(updatePayload)
+        .eq('username', resettingAdminPassword.username);
+
+      if (error) throw error;
+
+      setResettingAdminPassword(null);
+
+      if (resettingAdminPassword.isSelf) {
+        // Log self out immediately — must re-login with new password
+        alert('Password changed. You will now be logged out.');
+        onLogout();
+      } else {
+        alert(`Password reset for "${resettingAdminPassword.username}". All their active sessions have been invalidated.`);
+        fetchData();
+      }
+    } catch (err) {
+      alert('Error resetting password: ' + err.message);
     } finally {
       setIsSubmittingAdmin(false);
     }
   };
 
   const handleToggleAdminActive = async (username, currentlyActive) => {
-    // Cannot deactivate yourself
-    const storedRaw = localStorage.getItem('mmh_session');
-    if (storedRaw) {
-      try {
-        const stored = JSON.parse(storedRaw);
-        if (stored.username === username) {
-          alert('You cannot deactivate your own account while logged in.');
-          return;
-        }
-      } catch { /* ignore */ }
+    // Cannot deactivate/reactivate yourself
+    if (username === currentAdminUsername) {
+      alert('You cannot deactivate your own account. Ask another admin.');
+      return;
     }
 
     // Cannot deactivate the last active admin
@@ -587,22 +620,23 @@ export default function AdminDashboard({ session, onLogout }) {
     if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} admin "${username}"?${currentlyActive ? ' They will be immediately logged out of all sessions.' : ''}`)) return;
 
     try {
-      // Fetch current session_version first
       const { data: current, error: fetchErr } = await supabase
         .from('admins')
         .select('session_version')
         .eq('username', username)
         .maybeSingle();
 
-      if (fetchErr) throw fetchErr;
+      // 42703 = column does not exist; tolerate gracefully
+      if (fetchErr && fetchErr.code !== '42703') throw fetchErr;
 
-      // Increment session_version when deactivating so all active sessions
-      // for this user are immediately kicked out by App.jsx's poll.
       const newVersion = currentlyActive ? (current?.session_version ?? 1) + 1 : (current?.session_version ?? 1);
+
+      const updatePayload = { is_active: !currentlyActive };
+      if (!fetchErr) updatePayload.session_version = newVersion;
 
       const { error } = await supabase
         .from('admins')
-        .update({ is_active: !currentlyActive, session_version: newVersion })
+        .update(updatePayload)
         .eq('username', username);
 
       if (error) throw error;
@@ -614,25 +648,24 @@ export default function AdminDashboard({ session, onLogout }) {
   };
 
   const handleDeleteAdmin = async (username) => {
-    // Prevent deleting all admins — keep at least one active
-    const activeCount = adminUsers.filter(a => a.is_active !== false).length;
-    const isTargetActive = adminUsers.find(a => a.username === username)?.is_active !== false;
-    if (adminUsers.length <= 1 || (isTargetActive && activeCount <= 1)) {
-      alert('Cannot delete the only remaining admin.');
+    // Cannot delete yourself
+    if (username === currentAdminUsername) {
+      alert('You cannot delete your own account while logged in.');
       return;
     }
-    // Prevent self-delete
-    const storedRaw = localStorage.getItem('mmh_session');
-    if (storedRaw) {
-      try {
-        const stored = JSON.parse(storedRaw);
-        if (stored.username === username) {
-          alert('You cannot delete your own account while logged in.');
-          return;
-        }
-      } catch { /* ignore */ }
+    // Must always keep at least one admin total
+    if (adminUsers.length <= 1) {
+      alert('Cannot delete the only remaining admin account.');
+      return;
     }
-    if (!confirm(`Delete admin user "${username}"? This cannot be undone.`)) return;
+    // Must always keep at least one *active* admin
+    const isTargetActive = adminUsers.find(a => a.username === username)?.is_active !== false;
+    const activeCount = adminUsers.filter(a => a.is_active !== false).length;
+    if (isTargetActive && activeCount <= 1) {
+      alert('Cannot delete the last active admin. Deactivate or add another admin first.');
+      return;
+    }
+    if (!confirm(`Permanently delete admin "${username}"? This cannot be undone.`)) return;
     try {
       const { error } = await supabase
         .from('admins')
@@ -959,10 +992,10 @@ export default function AdminDashboard({ session, onLogout }) {
             style={{ height: '36px', width: 'auto' }} 
           />
           <div>
-            <h2 style={{ fontSize: '1.25rem', color: '#fff', margin: 0, fontWeight: '600' }}>
-              Admin
+            <h2 style={{ fontSize: '1.25rem', color: '#fff', margin: 0, fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '170px' }}>
+              {adminUsers.find(a => a.username === currentAdminUsername)?.name?.trim() || currentAdminUsername || 'Admin'}
             </h2>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>Portal</p>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>Admin</p>
           </div>
         </div>
 
@@ -1063,9 +1096,8 @@ export default function AdminDashboard({ session, onLogout }) {
             </svg>
             Settings
           </button>
-        </nav>
-
-        <button
+          
+                  <button
           onClick={onLogout}
           className="btn btn-secondary"
           style={{ marginTop: 'auto', justifyContent: 'center' }}
@@ -1077,6 +1109,9 @@ export default function AdminDashboard({ session, onLogout }) {
           </svg>
           Log Out
         </button>
+        </nav>
+
+
       </aside>
 
       {/* Main Content Area */}
@@ -1117,7 +1152,7 @@ export default function AdminDashboard({ session, onLogout }) {
                 </h3>
                 <div className="grid-split-1-1" style={{ gap: '1rem' }}>
                   <div className="input-group">
-                    <label htmlFor="owner-name-input">Owner Name</label>
+                    <label htmlFor="owner-name-input">Owner Name <span className="label-secondary" style={{ paddingLeft: '5px' }}>(As per Aadhaar)</span></label>
                     <input
                       id="owner-name-input"
                       type="text"
@@ -1228,7 +1263,7 @@ export default function AdminDashboard({ session, onLogout }) {
                     <h4 style={{ fontSize: '1rem', color: 'var(--primary)', marginBottom: '1rem', fontWeight: 'bold' }}>Tenant Details</h4>
                     <div className="grid-split-1-1" style={{ gap: '1rem' }}>
                       <div className="input-group">
-                        <label htmlFor="tenant-name-input">Tenant Name<span className="label-secondary">Name as per Aadhaar</span></label>
+                        <label htmlFor="tenant-name-input">Tenant Name<span className="label-secondary" style={{ paddingLeft: '5px' }}>(As per Aadhaar)</span></label>
                         <input
                           id="tenant-name-input"
                           type="text"
@@ -2596,7 +2631,7 @@ export default function AdminDashboard({ session, onLogout }) {
                     <button
                       className="btn btn-primary"
                       style={{ padding: '0.55rem 1.1rem', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}
-                      onClick={() => { setNewAdmin({ username: '', password: '' }); setShowAddAdminModal(true); }}
+                      onClick={() => { setNewAdmin({ username: '', password: '', name: '' }); setShowAddAdminModal(true); }}
                     >
                       <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -2613,12 +2648,7 @@ export default function AdminDashboard({ session, onLogout }) {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                       {adminUsers.map(admin => {
-                        const isSelf = (() => {
-                          try {
-                            const s = JSON.parse(localStorage.getItem('mmh_session') || '{}');
-                            return s.username === admin.username;
-                          } catch { return false; }
-                        })();
+                        const isSelf = admin.username === currentAdminUsername;
                         const isActive = admin.is_active !== false;
 
                         return (
@@ -2631,11 +2661,11 @@ export default function AdminDashboard({ session, onLogout }) {
                                 flexShrink: 0, fontSize: '0.9rem', fontWeight: '700',
                                 color: isSelf ? '#fff' : isActive ? 'var(--primary)' : 'var(--text-muted)'
                               }}>
-                                {admin.username.charAt(0).toUpperCase()}
+                                {(admin.name || admin.username).charAt(0).toUpperCase()}
                               </div>
                               <div>
                                 <div style={{ fontWeight: '600', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                  {admin.username}
+                                  {admin.name ? admin.name : admin.username}
                                   {isSelf && (
                                     <span style={{ fontSize: '0.65rem', background: 'rgba(99,102,241,0.2)', color: 'var(--primary)', padding: '1px 6px', borderRadius: '4px', fontWeight: '600' }}>
                                       You
@@ -2652,66 +2682,100 @@ export default function AdminDashboard({ session, onLogout }) {
                                   </span>
                                 </div>
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                                  {admin.name ? <span style={{ marginRight: '0.5rem' }}>@{admin.username}</span> : null}
                                   Added {new Date(admin.created_at).toLocaleDateString()}
                                 </div>
                               </div>
                             </div>
 
                             <div className="admin-user-actions">
+                              {/* Edit name — available for everyone */}
                               <button
                                 className="btn btn-secondary"
                                 style={{ padding: '0.4rem 0.8rem', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                                onClick={() => setEditingAdmin({ username: admin.username, password: '' })}
-                                title="Change password"
+                                onClick={() => setEditingAdmin({ username: admin.username, name: admin.name || '' })}
+                                title="Edit name"
                               >
                                 <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-                                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                                 </svg>
-                                Reset Password
+                                Edit
                               </button>
-                              <button
-                                className="btn btn-secondary"
-                                style={{
-                                  padding: '0.4rem 0.8rem', fontSize: '0.82rem',
-                                  color: isActive ? 'var(--warning)' : 'var(--success)',
-                                  display: 'flex', alignItems: 'center', gap: '0.35rem'
-                                }}
-                                onClick={() => handleToggleAdminActive(admin.username, isActive)}
-                                disabled={isSelf}
-                                title={isSelf ? "Can't deactivate your own account" : isActive ? 'Deactivate this admin' : 'Reactivate this admin'}
-                              >
-                                {isActive ? (
-                                  <>
+
+                              {isSelf ? (
+                                /* Self: only Change My Password */
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                                  onClick={() => setResettingAdminPassword({ username: admin.username, password: '', isSelf: true })}
+                                  title="Change your password"
+                                >
+                                  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                  </svg>
+                                  Change Password
+                                </button>
+                              ) : (
+                                /* Others: Reset Password + Deactivate + Delete */
+                                <>
+                                  <button
+                                    className="btn btn-secondary"
+                                    style={{ padding: '0.4rem 0.8rem', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                                    onClick={() => setResettingAdminPassword({ username: admin.username, password: '', isSelf: false })}
+                                    title="Reset password"
+                                  >
                                     <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-                                      <circle cx="12" cy="12" r="10"></circle>
-                                      <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+                                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                                     </svg>
-                                    Deactivate
-                                  </>
-                                ) : (
-                                  <>
+                                    Reset Password
+                                  </button>
+                                  <button
+                                    className="btn btn-secondary"
+                                    style={{
+                                      padding: '0.4rem 0.8rem', fontSize: '0.82rem',
+                                      color: isActive ? 'var(--warning)' : 'var(--success)',
+                                      display: 'flex', alignItems: 'center', gap: '0.35rem'
+                                    }}
+                                    onClick={() => handleToggleAdminActive(admin.username, isActive)}
+                                    title={isActive ? 'Deactivate this admin' : 'Reactivate this admin'}
+                                  >
+                                    {isActive ? (
+                                      <>
+                                        <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                                          <circle cx="12" cy="12" r="10"></circle>
+                                          <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+                                        </svg>
+                                        Deactivate
+                                      </>
+                                    ) : (
+                                      <>
+                                        <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                                          <polyline points="20 6 9 17 4 12"></polyline>
+                                        </svg>
+                                        Reactivate
+                                      </>
+                                    )}
+                                  </button>
+                                  <button
+                                    className="btn btn-secondary"
+                                    style={{ padding: '0.4rem 0.7rem', fontSize: '0.82rem', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                                    onClick={() => handleDeleteAdmin(admin.username)}
+                                    disabled={adminUsers.length <= 1}
+                                    title={adminUsers.length <= 1 ? "Can't delete the only admin" : "Permanently delete this admin"}
+                                  >
                                     <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-                                      <polyline points="20 6 9 17 4 12"></polyline>
+                                      <polyline points="3 6 5 6 21 6"></polyline>
+                                      <path d="M19 6l-1 14H6L5 6"></path>
+                                      <path d="M10 11v6M14 11v6"></path>
+                                      <path d="M9 6V4h6v2"></path>
                                     </svg>
-                                    Reactivate
-                                  </>
-                                )}
-                              </button>
-                              <button
-                                className="btn btn-secondary"
-                                style={{ padding: '0.4rem 0.7rem', fontSize: '0.82rem', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                                onClick={() => handleDeleteAdmin(admin.username)}
-                                disabled={adminUsers.length <= 1 || isSelf}
-                                title={isSelf ? "Can't delete your own account" : adminUsers.length <= 1 ? "Can't delete the last admin" : "Delete admin"}                              >
-                                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-                                  <polyline points="3 6 5 6 21 6"></polyline>
-                                  <path d="M19 6l-1 14H6L5 6"></path>
-                                  <path d="M10 11v6M14 11v6"></path>
-                                  <path d="M9 6V4h6v2"></path>
-                                </svg>
-                                Delete
-                              </button>
+                                    Delete
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </div>
                         );
@@ -2943,6 +3007,18 @@ export default function AdminDashboard({ session, onLogout }) {
             </p>
             <form onSubmit={handleAddAdmin}>
               <div className="input-group">
+                <label htmlFor="new-admin-name">Full Name</label>
+                <input
+                  id="new-admin-name"
+                  type="text"
+                  className="input-field"
+                  value={newAdmin.name}
+                  onChange={(e) => setNewAdmin({ ...newAdmin, name: e.target.value })}
+                  placeholder="e.g. Ravi Kumar"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="input-group">
                 <label htmlFor="new-admin-username">Username</label>
                 <input
                   id="new-admin-username"
@@ -2991,26 +3067,25 @@ export default function AdminDashboard({ session, onLogout }) {
         </div>
       )}
 
-      {/* CHANGE ADMIN PASSWORD MODAL */}
+      {/* EDIT ADMIN MODAL */}
       {editingAdmin && (
         <div className="modal-overlay">
           <div className="modal-content glass-panel glow-primary" style={{ maxWidth: '440px' }}>
-            <h2 style={{ marginBottom: '0.5rem' }}>Change Password</h2>
+            <h2 style={{ marginBottom: '0.25rem' }}>Edit Admin</h2>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-              Changing the password for <strong style={{ color: 'var(--text-primary)' }}>{editingAdmin.username}</strong> will immediately invalidate all their active sessions.
+              Editing <strong style={{ color: 'var(--text-primary)' }}>@{editingAdmin.username}</strong>
             </p>
-            <form onSubmit={handleUpdateAdminPassword}>
+            <form onSubmit={handleUpdateAdmin}>
               <div className="input-group">
-                <label htmlFor="edit-admin-password">New Password</label>
+                <label htmlFor="edit-admin-name">Full Name</label>
                 <input
-                  id="edit-admin-password"
+                  id="edit-admin-name"
                   type="text"
                   className="input-field"
-                  value={editingAdmin.password}
-                  onChange={(e) => setEditingAdmin({ ...editingAdmin, password: e.target.value })}
-                  required
-                  placeholder="Enter new password"
-                  autoComplete="new-password"
+                  value={editingAdmin.name}
+                  onChange={(e) => setEditingAdmin({ ...editingAdmin, name: e.target.value })}
+                  placeholder="e.g. Ravi Kumar"
+                  autoComplete="off"
                   autoFocus
                 />
               </div>
@@ -3029,7 +3104,58 @@ export default function AdminDashboard({ session, onLogout }) {
                   style={{ flex: 1 }}
                   disabled={isSubmittingAdmin}
                 >
-                  {isSubmittingAdmin ? 'Saving...' : 'Update Password'}
+                  {isSubmittingAdmin ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RESET ADMIN PASSWORD MODAL */}
+      {resettingAdminPassword && (
+        <div className="modal-overlay">
+          <div className="modal-content glass-panel glow-primary" style={{ maxWidth: '440px' }}>
+            <h2 style={{ marginBottom: '0.25rem' }}>
+              {resettingAdminPassword.isSelf ? 'Change Your Password' : 'Reset Password'}
+            </h2>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+              {resettingAdminPassword.isSelf
+                ? 'You will be logged out immediately after saving.'
+                : <>Setting a new password for <strong style={{ color: 'var(--text-primary)' }}>@{resettingAdminPassword.username}</strong> will immediately log them out of all active sessions.</>
+              }
+            </p>
+            <form onSubmit={handleResetAdminPassword}>
+              <div className="input-group">
+                <label htmlFor="reset-admin-password">New Password</label>
+                <input
+                  id="reset-admin-password"
+                  type="text"
+                  className="input-field"
+                  value={resettingAdminPassword.password}
+                  onChange={(e) => setResettingAdminPassword({ ...resettingAdminPassword, password: e.target.value })}
+                  required
+                  placeholder="Enter new password"
+                  autoComplete="new-password"
+                  autoFocus
+                />
+              </div>
+              <div className="flex-center gap-2" style={{ marginTop: '1.75rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                  onClick={() => setResettingAdminPassword(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1 }}
+                  disabled={isSubmittingAdmin}
+                >
+                  {isSubmittingAdmin ? 'Resetting...' : 'Reset Password'}
                 </button>
               </div>
             </form>

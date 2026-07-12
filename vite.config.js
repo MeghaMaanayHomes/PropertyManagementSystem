@@ -8,5 +8,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 4000,
+    // Serve index.html for all routes so react-router handles them
+    historyApiFallback: true,
   },
 })

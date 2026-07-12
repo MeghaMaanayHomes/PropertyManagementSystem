@@ -1,73 +1,68 @@
 import React, { useState, useEffect, useRef } from 'react';
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+  useParams,
+} from 'react-router-dom';
 import Login from './components/Login';
 import AdminDashboard from './components/AdminDashboard';
 import ResidentDashboard from './components/ResidentDashboard';
 import { supabase } from './supabase';
 import './index.css';
 
-// How often (ms) to check if an admin's session_version is still valid.
-// This ensures a password change forces logout across all open tabs/browsers.
-const SESSION_CHECK_INTERVAL_MS = 30_000; // 30 seconds
+const SESSION_CHECK_INTERVAL_MS = 30_000;
 
+// ---------------------------------------------------------------------------
+// Valid tab slugs per role — used to reject unknown paths
+// ---------------------------------------------------------------------------
+const ADMIN_TABS = ['overview', 'flats', 'ledger', 'approvals', 'notices', 'complaints', 'contacts', 'settings'];
+const RESIDENT_TABS = ['overview', 'map', 'payments', 'notices', 'complaints', 'approvals', 'contacts', 'settings'];
+
+// ---------------------------------------------------------------------------
+// Session verification helper (extracted so it can be used anywhere)
+// ---------------------------------------------------------------------------
+async function verifyAdminSession(savedSession) {
+  if (savedSession?.role !== 'admin') return true;
+  try {
+    const { data, error } = await supabase
+      .from('admins')
+      .select('session_version, is_active')
+      .eq('username', savedSession.username)
+      .maybeSingle();
+
+    if (error) {
+      if (error.code === '42703') {
+        const { data: exists } = await supabase
+          .from('admins').select('username').eq('username', savedSession.username).maybeSingle();
+        return !!exists;
+      }
+      return true;
+    }
+    if (!data) return false;
+    if (data.is_active === false) return false;
+    return (data.session_version ?? 1) === (savedSession.session_version ?? 1);
+  } catch {
+    return true;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Root component — owns session state, renders router
+// ---------------------------------------------------------------------------
 export default function App() {
   const [session, setSession] = useState(null);
   const [initializing, setInitializing] = useState(true);
   const sessionCheckRef = useRef(null);
-
-  // ----- Helpers -----
 
   const clearSession = () => {
     localStorage.removeItem('mmh_session');
     setSession(null);
   };
 
-  /**
-   * For admin sessions, verify the stored session_version still matches
-   * what's in the DB. If someone changed the password, session_version
-   * will have been incremented, and any older session is forced out.
-   */
-  const verifyAdminSession = async (savedSession) => {
-    if (savedSession?.role !== 'admin') return true; // residents don't use session_version
-
-    try {
-      const { data, error } = await supabase
-        .from('admins')
-        .select('session_version, is_active')
-        .eq('username', savedSession.username)
-        .maybeSingle();
-
-      // If the column doesn't exist yet (migration not run), or any DB error,
-      // just verify the user exists by username — don't invalidate the session.
-      if (error) {
-        if (error.code === '42703') {
-          // "column does not exist" — fall back to just checking the user exists
-          const { data: exists } = await supabase
-            .from('admins')
-            .select('username')
-            .eq('username', savedSession.username)
-            .maybeSingle();
-          return !!exists;
-        }
-        // Any other DB error — assume valid rather than logging everyone out
-        return true;
-      }
-
-      if (!data) return false; // username not found in DB
-
-      // Deactivated accounts are always invalid
-      if (data.is_active === false) return false;
-
-      const dbVersion = data.session_version ?? 1;
-      const storedVersion = savedSession.session_version ?? 1;
-      return dbVersion === storedVersion;
-    } catch {
-      // Network error — assume valid rather than logging everyone out
-      return true;
-    }
-  };
-
-  // ----- Boot -----
-
+  // Boot — restore session from localStorage
   useEffect(() => {
     const init = async () => {
       const raw = localStorage.getItem('mmh_session');
@@ -75,11 +70,8 @@ export default function App() {
         try {
           const parsed = JSON.parse(raw);
           const valid = await verifyAdminSession(parsed);
-          if (valid) {
-            setSession(parsed);
-          } else {
-            localStorage.removeItem('mmh_session');
-          }
+          if (valid) setSession(parsed);
+          else localStorage.removeItem('mmh_session');
         } catch {
           localStorage.removeItem('mmh_session');
         }
@@ -89,42 +81,24 @@ export default function App() {
     init();
   }, []);
 
-  // ----- Periodic session-version poll for admin sessions -----
-
+  // Periodic session-version poll for admin sessions
   useEffect(() => {
     if (sessionCheckRef.current) clearInterval(sessionCheckRef.current);
-
     if (session?.role === 'admin') {
       sessionCheckRef.current = setInterval(async () => {
         const raw = localStorage.getItem('mmh_session');
         if (!raw) { clearSession(); return; }
-
         try {
           const parsed = JSON.parse(raw);
-          const valid = await verifyAdminSession(parsed);
-          if (!valid) clearSession();
-        } catch {
-          clearSession();
-        }
+          if (!await verifyAdminSession(parsed)) clearSession();
+        } catch { clearSession(); }
       }, SESSION_CHECK_INTERVAL_MS);
     }
-
-    return () => {
-      if (sessionCheckRef.current) clearInterval(sessionCheckRef.current);
-    };
+    return () => { if (sessionCheckRef.current) clearInterval(sessionCheckRef.current); };
   }, [session]);
 
-  // ----- Callbacks passed to children -----
-
-  const handleLoginSuccess = (sessionData) => {
-    setSession(sessionData);
-  };
-
-  const handleLogout = () => {
-    clearSession();
-  };
-
-  // ----- Render -----
+  const handleLoginSuccess = (sessionData) => setSession(sessionData);
+  const handleLogout = () => clearSession();
 
   if (initializing) {
     return (
@@ -136,18 +110,76 @@ export default function App() {
     );
   }
 
-  if (!session) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
-  }
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Login */}
+        <Route
+          path="/login"
+          element={
+            session
+              ? <Navigate to="/overview" replace />
+              : <Login onLoginSuccess={handleLoginSuccess} />
+          }
+        />
 
-  if (session.role === 'admin') {
-    return <AdminDashboard session={session} onLogout={handleLogout} />;
-  }
+        {/* Admin tabs */}
+        {ADMIN_TABS.map(tab => (
+          <Route
+            key={`admin-${tab}`}
+            path={`/${tab}`}
+            element={
+              !session
+                ? <Navigate to="/login" replace />
+                : session.role === 'admin'
+                  ? <AdminDashboard session={session} onLogout={handleLogout} initialTab={tab} />
+                  : <Navigate to="/overview" replace />
+            }
+          />
+        ))}
 
-  if (session.role === 'owner' || session.role === 'tenant') {
-    return <ResidentDashboard session={session} onLogout={handleLogout} />;
-  }
+        {/* Resident-only tabs that don't overlap with admin */}
+        {['map', 'payments'].map(tab => (
+          <Route
+            key={`resident-${tab}`}
+            path={`/${tab}`}
+            element={
+              !session
+                ? <Navigate to="/login" replace />
+                : (session.role === 'owner' || session.role === 'tenant')
+                  ? <ResidentDashboard session={session} onLogout={handleLogout} initialTab={tab} />
+                  : <Navigate to="/overview" replace />
+            }
+          />
+        ))}
 
-  // Fallback
-  return <Login onLoginSuccess={handleLoginSuccess} />;
+        {/* Shared tab paths — route to correct dashboard by role */}
+        {['overview', 'notices', 'complaints', 'approvals', 'contacts', 'settings'].map(tab => (
+          <Route
+            key={`shared-${tab}`}
+            path={`/${tab}`}
+            element={
+              !session
+                ? <Navigate to="/login" replace />
+                : session.role === 'admin'
+                  ? <AdminDashboard session={session} onLogout={handleLogout} initialTab={tab} />
+                  : <ResidentDashboard session={session} onLogout={handleLogout} initialTab={tab} />
+            }
+          />
+        ))}
+
+        {/* Root redirect */}
+        <Route
+          path="/"
+          element={<Navigate to={session ? '/overview' : '/login'} replace />}
+        />
+
+        {/* Catch-all */}
+        <Route
+          path="*"
+          element={<Navigate to={session ? '/overview' : '/login'} replace />}
+        />
+      </Routes>
+    </BrowserRouter>
+  );
 }
