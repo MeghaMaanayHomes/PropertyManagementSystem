@@ -1512,34 +1512,101 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                 <div className="grid-split-2-1">
                   {/* Recent Activity / Quick Status */}
                   <div className="glass-panel" style={{ padding: '1.5rem', minWidth: 0 }}>
-                    <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Active Maintenance Dues Overview</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '380px', overflowY: 'auto', paddingRight: '0.25rem' }}>
-                      {flats.slice(0, 8).map(flat => {
-                        const record = maintenanceRecords.find(r => r.flat_no === flat.flat_no);
-                        const paid = record ? record.amount_paid : 0;
-                        const status = record ? record.payment_status : 'Unpaid';
-                        const due = record ? record.amount_due : maintenanceAmount;
-                        const outstanding = Math.max(0, due - paid);
-                        const name = flat.is_vacant
-                          ? 'Vacant'
-                          : (flat.is_owner_occupied
-                              ? (flat.owner_name || 'Owner')
-                              : (flat.tenant_name || 'Tenant'));
-                        const badgeClass = status === 'Paid' ? 'badge-paid' : status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid';
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '1rem' }}>
+                      <div>
+                        <h3 style={{ marginBottom: '0.15rem', fontSize: '1.1rem' }}>Active Maintenance Dues Overview</h3>
+                        <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                          Showing only unpaid &amp; partially-paid entries for {selectedMonth}
+                        </p>
+                      </div>
+                      <button
+                        title="Copy reminder list for WhatsApp"
+                        onClick={() => {
+                          const unpaid = flats.filter(flat => {
+                            const rec = maintenanceRecords.find(r => r.flat_no === flat.flat_no);
+                            return (rec ? rec.payment_status : 'Unpaid') !== 'Paid';
+                          });
+                          if (unpaid.length === 0) {
+                            alert('All dues are cleared — nothing to copy!');
+                            return;
+                          }
+                          const lines = unpaid.map(flat => {
+                              const ownerName = (flat.owner_name || '').trim();
+                              const tenantName = (flat.tenant_name || '').trim();
+                              const parts = [flat.flat_no];
+                              if (tenantName) parts.push(`${tenantName} (Tenant)`);
+                              if (ownerName) parts.push(`${ownerName} (Owner)`);
+                              if (!tenantName && !ownerName) parts.push('Name not registered');
+                              return parts.join(' - ');
+                            });
+                          const header = `🏢 Maintenance Due Reminder — ${selectedMonth}\nPlease pay your maintenance amount at the earliest. If already paid, update it in https://meghamaanayhomes.in\n\n`;
+                          const text = header + lines.join('\n');
+                          navigator.clipboard.writeText(text).then(() => {
+                            const btn = document.getElementById('dues-copy-btn');
+                            if (btn) {
+                              const orig = btn.innerHTML;
+                              btn.innerHTML = '✅ Copied!';
+                              btn.style.color = 'var(--success)';
+                              setTimeout(() => { btn.innerHTML = orig; btn.style.color = ''; }, 2000);
+                            }
+                          });
+                        }}
+                        id="dues-copy-btn"
+                        className="btn btn-secondary"
+                        style={{ padding: '0.35rem 0.7rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0, whiteSpace: 'nowrap' }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                        Copy List
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      {(() => {
+                        const unpaidFlats = flats.filter(flat => {
+                          const record = maintenanceRecords.find(r => r.flat_no === flat.flat_no);
+                          const status = record ? record.payment_status : 'Unpaid';
+                          return status !== 'Paid';
+                        });
 
-                        return (
-                          <div key={flat.flat_no} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
-                              <span style={{ fontWeight: '700', fontSize: '0.88rem', color: 'var(--text-primary)', flexShrink: 0 }}>{flat.flat_no}</span>
-                              <span style={{ fontSize: '0.82rem', color: flat.is_vacant ? 'var(--text-muted)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                        if (unpaidFlats.length === 0) {
+                          return (
+                            <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--success)' }}>
+                              <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>✅</div>
+                              <p style={{ fontWeight: '600', fontSize: '0.95rem' }}>All dues cleared for {selectedMonth}!</p>
+                              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Every flat has paid their maintenance.</p>
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-                              <span className={`badge ${badgeClass}`} style={{ fontSize: '0.65rem', padding: '2px 7px' }}>{status}</span>
-                              <span style={{ fontWeight: '600', fontSize: '0.85rem', color: outstanding > 0 ? 'var(--accent)' : 'var(--success)', minWidth: '3.5rem', textAlign: 'right' }}>₹{outstanding}</span>
+                          );
+                        }
+
+                        return unpaidFlats.map(flat => {
+                          const record = maintenanceRecords.find(r => r.flat_no === flat.flat_no);
+                          const paid = record ? record.amount_paid : 0;
+                          const status = record ? record.payment_status : 'Unpaid';
+                          const due = record ? record.amount_due : maintenanceAmount;
+                          const outstanding = Math.max(0, due - paid);
+                          const name = flat.is_vacant
+                            ? 'Vacant'
+                            : (flat.is_owner_occupied
+                                ? (flat.owner_name || 'Owner')
+                                : (flat.tenant_name || 'Tenant'));
+                          const badgeClass = status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid';
+
+                          return (
+                            <div key={flat.flat_no} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0, flex: 1 }}>
+                                <span style={{ fontWeight: '700', fontSize: '0.88rem', color: 'var(--text-primary)', flexShrink: 0 }}>{flat.flat_no}</span>
+                                <span style={{ fontSize: '0.82rem', color: flat.is_vacant ? 'var(--text-muted)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                                <span className={`badge ${badgeClass}`} style={{ fontSize: '0.65rem', padding: '2px 7px' }}>{status}</span>
+                                <span style={{ fontWeight: '600', fontSize: '0.85rem', color: 'var(--accent)', minWidth: '3.5rem', textAlign: 'right' }}>₹{outstanding}</span>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        });
+                      })()}
                     </div>
                     <div style={{ marginTop: '1rem', textAlign: 'right' }}>
                       <button className="btn btn-secondary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }} onClick={() => handleTabChange('ledger')}>
