@@ -116,7 +116,7 @@ export default function Login({ onLoginSuccess }) {
 
   return (
     <div className="flex-center" style={{ minHeight: '100vh', padding: '1rem', width: '100%' }}>
-      <div className="glass-panel glow-primary" style={{ width: '100%', maxWidth: '420px', padding: '2.5rem 2rem' }}>
+      <div className="glass-panel glow-primary" style={{ width: '100%', maxWidth: '420px', padding: '1.0rem 2rem' }}>
         <div style={{ textAlign: 'center', marginBottom: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <img 
             src="/logo.png" 
