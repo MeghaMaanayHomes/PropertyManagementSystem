@@ -1731,11 +1731,6 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
                       <div className="floor-label">Floor {floorNum}</div>
                       <div className="flat-grid">
                         {floors[floorNum].map(flat => {
-                          const name = flat.is_vacant 
-                            ? 'Vacant' 
-                            : (flat.is_owner_occupied 
-                                ? (flat.owner_name ? `Owner: ${flat.owner_name}` : 'Owner') 
-                                : (flat.tenant_name ? `Tenant: ${flat.tenant_name}` : 'Tenant'));
                           const isSelf = flat.flat_no === flatNo;
                           return (
                             <div
@@ -1754,8 +1749,21 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
                                 )}
                               </span>
                               <div style={{ marginTop: '0.5rem' }}>
-                                <div style={{ fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-primary)' }}>
-                                  {name}
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+                                  {!flat.is_vacant && !flat.is_owner_occupied ? (
+                                    <>
+                                      <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '0.15rem' }}>
+                                        Owner: {flat.owner_name || 'Owner'}
+                                      </div>
+                                      <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        Tenant: {flat.tenant_name || 'Tenant'}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      Owner: {flat.owner_name || 'Owner'}
+                                    </div>
+                                  )}
                                 </div>
                                 <span className={`badge ${flat.is_vacant ? 'badge-vacant' : 'badge-occupied'}`} style={{ fontSize: '0.65rem', padding: '1px 5px', marginTop: '0.25rem' }}>
                                   {flat.is_vacant 

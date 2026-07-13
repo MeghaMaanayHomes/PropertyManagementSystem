@@ -287,28 +287,63 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
           .eq('id', ownerId);
         if (ownerUpdateError) throw ownerUpdateError;
       } else {
-        const { data: newOwner, error: ownerInsertError } = await supabase
+        // Fallback: Check if username already exists in users table (e.g. from initial seeds)
+        const { data: existingOwner } = await supabase
           .from('users')
-          .insert([ownerPayload])
-          .select()
-          .single();
-        if (ownerInsertError) throw ownerInsertError;
-        ownerId = newOwner.id;
+          .select('id')
+          .eq('username', `owner${editingFlat.flat_no}`)
+          .maybeSingle();
+
+        if (existingOwner) {
+          ownerId = existingOwner.id;
+          const { error: ownerUpdateError } = await supabase
+            .from('users')
+            .update(ownerPayload)
+            .eq('id', ownerId);
+          if (ownerUpdateError) throw ownerUpdateError;
+        } else {
+          const { data: newOwner, error: ownerInsertError } = await supabase
+            .from('users')
+            .insert([ownerPayload])
+            .select()
+            .single();
+          if (ownerInsertError) throw ownerInsertError;
+          ownerId = newOwner.id;
+        }
       }
 
       // Upsert Tenant user if flat is rented
       let tenantId = null;
       const isRented = !editingFlat.is_vacant && !editingFlat.is_owner_occupied;
+      const hasTenantChanged = currentFlat && (
+        (currentFlat.tenant?.name || '') !== editingFlat.tenant_name ||
+        (currentFlat.tenant?.phone || '') !== editingFlat.tenant_phone
+      );
+
+      // Rename old tenant to free up the unique username if tenant changed or left
+      if (currentFlat?.tenant_id && (hasTenantChanged || !isRented)) {
+        await supabase
+          .from('users')
+          .update({
+            username: `tenant${editingFlat.flat_no}_ex_${Date.now()}`,
+            is_active: false
+          })
+          .eq('id', currentFlat.tenant_id);
+      }
 
       if (isRented) {
-        tenantId = currentFlat?.tenant_id;
+        if (currentFlat?.tenant_id && !hasTenantChanged) {
+          tenantId = currentFlat.tenant_id;
+        }
+
         const tenantPayload = {
           name: editingFlat.tenant_name,
           phone: editingFlat.tenant_phone,
           email: editingFlat.tenant_email || null,
           username: `tenant${editingFlat.flat_no}`,
           password: editingFlat.tenant_password || `tenant${editingFlat.flat_no}`,
-          is_admin: false
+          is_admin: false,
+          is_active: true
         };
 
         if (tenantId) {
@@ -318,13 +353,29 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
             .eq('id', tenantId);
           if (tenantUpdateError) throw tenantUpdateError;
         } else {
-          const { data: newTenant, error: tenantInsertError } = await supabase
+          // Check if username already exists in database (could be a leftover default tenant user)
+          const { data: existingTenant } = await supabase
             .from('users')
-            .insert([tenantPayload])
-            .select()
-            .single();
-          if (tenantInsertError) throw tenantInsertError;
-          tenantId = newTenant.id;
+            .select('id')
+            .eq('username', `tenant${editingFlat.flat_no}`)
+            .maybeSingle();
+
+          if (existingTenant) {
+            tenantId = existingTenant.id;
+            const { error: tenantUpdateError } = await supabase
+              .from('users')
+              .update(tenantPayload)
+              .eq('id', tenantId);
+            if (tenantUpdateError) throw tenantUpdateError;
+          } else {
+            const { data: newTenant, error: tenantInsertError } = await supabase
+              .from('users')
+              .insert([tenantPayload])
+              .select()
+              .single();
+            if (tenantInsertError) throw tenantInsertError;
+            tenantId = newTenant.id;
+          }
         }
       }
 
@@ -406,30 +457,73 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
         if (ownerId) {
           await supabase.from('users').update(ownerPayload).eq('id', ownerId);
         } else {
-          const { data: newOwner } = await supabase.from('users').insert([ownerPayload]).select().single();
-          ownerId = newOwner.id;
+          // Check if username already exists in users table (e.g. from initial seeds)
+          const { data: existingOwner } = await supabase
+            .from('users')
+            .select('id')
+            .eq('username', `owner${req.flat_no}`)
+            .maybeSingle();
+
+          if (existingOwner) {
+            ownerId = existingOwner.id;
+            await supabase.from('users').update(ownerPayload).eq('id', ownerId);
+          } else {
+            const { data: newOwner } = await supabase.from('users').insert([ownerPayload]).select().single();
+            ownerId = newOwner.id;
+          }
         }
 
         // Upsert Tenant user if flat is rented
         let tenantId = null;
         const isRented = !details.is_vacant && !details.is_owner_occupied;
+        const hasTenantChanged = currentFlat && (
+          (currentFlat.tenant?.name || '') !== details.tenant_name ||
+          (currentFlat.tenant?.phone || '') !== details.tenant_phone
+        );
+
+        // Rename old tenant to free up username if tenant changed or left
+        if (currentFlat?.tenant_id && (hasTenantChanged || !isRented)) {
+          await supabase
+            .from('users')
+            .update({
+              username: `tenant${req.flat_no}_ex_${Date.now()}`,
+              is_active: false
+            })
+            .eq('id', currentFlat.tenant_id);
+        }
 
         if (isRented) {
-          tenantId = currentFlat?.tenant_id;
+          if (currentFlat?.tenant_id && !hasTenantChanged) {
+            tenantId = currentFlat.tenant_id;
+          }
+
           const tenantPayload = {
             name: details.tenant_name,
             phone: details.tenant_phone,
             email: details.tenant_email || null,
             username: `tenant${req.flat_no}`,
             password: currentFlat?.tenant?.password || `tenant${req.flat_no}`,
-            is_admin: false
+            is_admin: false,
+            is_active: true
           };
 
           if (tenantId) {
             await supabase.from('users').update(tenantPayload).eq('id', tenantId);
           } else {
-            const { data: newTenant } = await supabase.from('users').insert([tenantPayload]).select().single();
-            tenantId = newTenant.id;
+            // Check if username already exists in database (could be a leftover default tenant user)
+            const { data: existingTenant } = await supabase
+              .from('users')
+              .select('id')
+              .eq('username', `tenant${req.flat_no}`)
+              .maybeSingle();
+
+            if (existingTenant) {
+              tenantId = existingTenant.id;
+              await supabase.from('users').update(tenantPayload).eq('id', tenantId);
+            } else {
+              const { data: newTenant } = await supabase.from('users').insert([tenantPayload]).select().single();
+              tenantId = newTenant.id;
+            }
           }
         }
 
@@ -499,6 +593,23 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
 
             if (ownerHistoryError) throw ownerHistoryError;
           }
+        }
+
+        // Rename any existing user using this username to free it up
+        const { data: existingUserWithUsername } = await supabase
+          .from('users')
+          .select('id')
+          .eq('username', `owner${req.flat_no}`)
+          .maybeSingle();
+
+        if (existingUserWithUsername) {
+          await supabase
+            .from('users')
+            .update({
+              username: `owner${req.flat_no}_ex_${Date.now()}`,
+              is_active: false
+            })
+            .eq('id', existingUserWithUsername.id);
         }
 
         // Create new owner user in users
@@ -1972,11 +2083,6 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                       <div className="floor-label">Floor {floorNum}</div>
                       <div className="flat-grid">
                         {floors[floorNum].map(flat => {
-                          const name = flat.is_vacant 
-                            ? 'Vacant' 
-                            : (flat.is_owner_occupied 
-                                ? (flat.owner_name ? `Owner: ${flat.owner_name}` : 'Owner') 
-                                : (flat.tenant_name ? `Tenant: ${flat.tenant_name}` : 'Tenant'));
                           return (
                             <div
                               key={flat.flat_no}
@@ -1985,13 +2091,22 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                             >
                               <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>{flat.flat_no}</span>
                               <div style={{ marginTop: '0.5rem' }}>
-                                {!flat.is_vacant && (
-                                  <div style={{ fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
-                                    {flat.is_owner_occupied
-                                      ? (flat.owner_name ? `Owner: ${flat.owner_name}` : '')
-                                      : (flat.tenant_name ? `Tenant: ${flat.tenant_name}` : '')}
-                                  </div>
-                                )}
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                                  {!flat.is_vacant && !flat.is_owner_occupied ? (
+                                    <>
+                                      <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '0.15rem' }}>
+                                        Owner: {flat.owner_name || 'Owner'}
+                                      </div>
+                                      <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        Tenant: {flat.tenant_name || 'Tenant'}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      Owner: {flat.owner_name || 'Owner'}
+                                    </div>
+                                  )}
+                                </div>
                                 <span className={`badge ${flat.is_vacant ? 'badge-vacant' : 'badge-occupied'}`} style={{ fontSize: '0.65rem', padding: '1px 5px' }}>
                                   {flat.is_vacant
                                     ? 'Vacant'
