@@ -2148,7 +2148,7 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
                   <p style={{ color: 'var(--text-secondary)' }}>Manage your resident account settings</p>
                 </div>
 
-                <div className="glass-panel" style={{ padding: '2rem', maxWidth: '500px' }}>
+                <div className="glass-panel settings-panel" style={{ maxWidth: '500px' }}>
                   <h3 style={{ marginBottom: '1.5rem', fontSize: '1.1rem', color: 'var(--primary)' }}>Change Password</h3>
 
                   {passwordMessage.text && (
