@@ -26,12 +26,13 @@ export default function Login({ onLoginSuccess }) {
 
     try {
       if (isAdmin) {
-        // Admin Login
+        // Admin Login (now uses users table where is_admin = true)
         const { data, error: queryError } = await supabase
-          .from('admins')
+          .from('users')
           .select('*')
           .eq('username', username.trim().toLowerCase())
           .eq('password', password)
+          .eq('is_admin', true)
           .maybeSingle();
 
         if (queryError) throw queryError;
@@ -45,6 +46,7 @@ export default function Login({ onLoginSuccess }) {
           const sessionData = {
             role: 'admin',
             username: data.username,
+            userId: data.id,
             session_version: data.session_version ?? 1,
           };
           localStorage.setItem('mmh_session', JSON.stringify(sessionData));
@@ -54,22 +56,54 @@ export default function Login({ onLoginSuccess }) {
         }
       } else {
         // Resident Login
-        const passwordColumn = residentRole === 'owner' ? 'owner_password' : 'tenant_password';
-        const { data, error: queryError } = await supabase
+        // 1. Fetch the flat to see which user ID is owner_id or tenant_id
+        const { data: flatData, error: flatError } = await supabase
           .from('flats')
           .select('*')
           .eq('flat_no', flatNo)
-          .eq(passwordColumn, password)
           .maybeSingle();
 
-        if (queryError) throw queryError;
+        if (flatError) throw flatError;
 
-        if (data) {
-          const sessionData = { role: residentRole, flatNo: data.flat_no, flatDetails: data };
+        if (!flatData) {
+          setError(`Flat ${flatNo} not found in database.`);
+          setLoading(false);
+          return;
+        }
+
+        const targetUserId = residentRole === 'owner' ? flatData.owner_id : flatData.tenant_id;
+        if (!targetUserId) {
+          setError(`No ${residentRole} is currently registered for Flat ${flatNo}.`);
+          setLoading(false);
+          return;
+        }
+
+        // 2. Fetch the target user and verify password
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', targetUserId)
+          .eq('password', password)
+          .maybeSingle();
+
+        if (userError) throw userError;
+
+        if (userData) {
+          if (userData.is_active === false) {
+            setError('Your account has been deactivated. Contact admin.');
+            setLoading(false);
+            return;
+          }
+          const sessionData = {
+            role: residentRole,
+            flatNo: flatNo,
+            userId: userData.id,
+            user: userData
+          };
           localStorage.setItem('mmh_session', JSON.stringify(sessionData));
           onLoginSuccess(sessionData);
         } else {
-          setError(`Invalid ${residentRole} password for flat ${flatNo}`);
+          setError(`Invalid password for ${residentRole} of flat ${flatNo}.`);
         }
       }
     } catch (err) {

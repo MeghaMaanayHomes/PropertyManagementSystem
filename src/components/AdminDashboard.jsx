@@ -23,6 +23,10 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [newNotice, setNewNotice] = useState({ title: '', content: '' });
   const [showNoticeModal, setShowNoticeModal] = useState(false);
+  const [editingNotice, setEditingNotice] = useState(null); // {id, title, content}
+  const [noticeAttachment, setNoticeAttachment] = useState(null); // File object
+  const [noticeAttachmentPreview, setNoticeAttachmentPreview] = useState(null); // URL string
+  const [isSubmittingNotice, setIsSubmittingNotice] = useState(false);
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [flatTenantHistory, setFlatTenantHistory] = useState([]);
   const [approvals, setApprovals] = useState([]);
@@ -123,28 +127,18 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
         contactsResult,
         adminsResult,
       ] = await Promise.all([
-        supabase.from('flats').select('*').order('flat_no', { ascending: true }),
+        supabase
+          .from('flats')
+          .select('flat_no, is_vacant, is_owner_occupied, occupancy_from, owner_id, tenant_id, owner:users!owner_id(*), tenant:users!tenant_id(*)')
+          .order('flat_no', { ascending: true }),
         supabase.from('maintenance_records').select('*').eq('billing_month', selectedMonth),
         supabase.from('announcements').select('*').order('created_at', { ascending: false }),
         supabase.from('complaints').select('*').order('created_at', { ascending: false }),
         supabase.from('approvals').select('*').order('created_at', { ascending: false }),
         supabase.from('settings').select('*'),
         supabase.from('contacts').select('*').order('name', { ascending: true }).then(r => r).catch(() => ({ data: [], error: null })),
-        // Admins query — try with is_active, fall back if column missing
-        (async () => {
-          const r = await supabase
-            .from('admins')
-            .select('username, name, is_active, created_at')
-            .order('created_at', { ascending: true });
-          if (r.error?.code === '42703') {
-            // new columns not yet added — fetch without them
-            return supabase
-              .from('admins')
-              .select('username, created_at')
-              .order('created_at', { ascending: true });
-          }
-          return r;
-        })(),      ]);
+        supabase.from('users').select('id, username, name, is_active, created_at').eq('is_admin', true).order('created_at', { ascending: true }).then(r => r).catch(() => ({ data: [], error: null }))
+      ]);
 
       if (flatsError) throw flatsError;
       if (recordsError) throw recordsError;
@@ -152,7 +146,25 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
       if (complaintsError) throw complaintsError;
       if (approvalsError) throw approvalsError;
 
-      setFlats(flatsData || []);
+      // Map raw relational fields into the legacy flat shape for UI backward compatibility
+      const mappedFlats = (flatsData || []).map(flat => ({
+        flat_no: flat.flat_no,
+        is_vacant: flat.is_vacant,
+        is_owner_occupied: flat.is_owner_occupied,
+        occupancy_from: flat.occupancy_from,
+        owner_id: flat.owner_id,
+        tenant_id: flat.tenant_id,
+        owner_name: flat.owner?.name || '',
+        phone_number: flat.owner?.phone || '',
+        email: flat.owner?.email || '',
+        owner_password: flat.owner?.password || '',
+        tenant_name: flat.tenant?.name || '',
+        tenant_phone: flat.tenant?.phone || '',
+        tenant_email: flat.tenant?.email || '',
+        tenant_password: flat.tenant?.password || ''
+      }));
+
+      setFlats(mappedFlats);
       setMaintenanceRecords(recordsData || []);
       setAnnouncements(noticesData || []);
       setComplaints(complaintsData || []);
@@ -172,7 +184,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
         }
       }
 
-      calculateStats(flatsData || [], recordsData || [], currentMaintenanceAmount);
+      calculateStats(mappedFlats, recordsData || [], currentMaintenanceAmount);
 
       // Contacts (graceful — already caught above)
       if (contactsResult?.data) {
@@ -229,7 +241,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
       // 1. Fetch current flat to compare for tenant history archive
       const { data: currentFlat, error: fetchError } = await supabase
         .from('flats')
-        .select('*')
+        .select('*, owner:users!owner_id(*), tenant:users!tenant_id(*)')
         .eq('flat_no', editingFlat.flat_no)
         .maybeSingle();
 
@@ -238,7 +250,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
       if (currentFlat) {
         const wasRented = currentFlat.is_vacant === false && currentFlat.is_owner_occupied === false;
         const isNewNotRented = editingFlat.is_vacant === true || editingFlat.is_owner_occupied === true;
-        const hasTenantChanged = currentFlat.tenant_name !== editingFlat.tenant_name || currentFlat.tenant_phone !== editingFlat.tenant_phone;
+        const hasTenantChanged = (currentFlat.tenant?.name || '') !== editingFlat.tenant_name || (currentFlat.tenant?.phone || '') !== editingFlat.tenant_phone;
 
         if (wasRented && (isNewNotRented || hasTenantChanged)) {
           // Archive old tenant details
@@ -246,9 +258,9 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
             .from('tenant_history')
             .insert([{
               flat_no: editingFlat.flat_no,
-              tenant_name: currentFlat.tenant_name || 'Unknown',
-              tenant_phone: currentFlat.tenant_phone || '',
-              tenant_email: currentFlat.tenant_email || '',
+              tenant_name: currentFlat.tenant?.name || 'Unknown',
+              tenant_phone: currentFlat.tenant?.phone || '',
+              tenant_email: currentFlat.tenant?.email || '',
               occupied_from: currentFlat.occupancy_from || new Date().toISOString().split('T')[0],
               occupied_to: new Date().toISOString().split('T')[0]
             }]);
@@ -257,25 +269,87 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
         }
       }
 
-      // 2. Perform flat update
+      // Upsert Owner user
+      let ownerId = currentFlat?.owner_id;
+      const ownerPayload = {
+        name: editingFlat.owner_name,
+        phone: editingFlat.phone_number,
+        email: editingFlat.email || null,
+        username: `owner${editingFlat.flat_no}`,
+        password: editingFlat.owner_password || `owner${editingFlat.flat_no}`,
+        is_admin: false
+      };
+
+      if (ownerId) {
+        const { error: ownerUpdateError } = await supabase
+          .from('users')
+          .update(ownerPayload)
+          .eq('id', ownerId);
+        if (ownerUpdateError) throw ownerUpdateError;
+      } else {
+        const { data: newOwner, error: ownerInsertError } = await supabase
+          .from('users')
+          .insert([ownerPayload])
+          .select()
+          .single();
+        if (ownerInsertError) throw ownerInsertError;
+        ownerId = newOwner.id;
+      }
+
+      // Upsert Tenant user if flat is rented
+      let tenantId = null;
+      const isRented = !editingFlat.is_vacant && !editingFlat.is_owner_occupied;
+
+      if (isRented) {
+        tenantId = currentFlat?.tenant_id;
+        const tenantPayload = {
+          name: editingFlat.tenant_name,
+          phone: editingFlat.tenant_phone,
+          email: editingFlat.tenant_email || null,
+          username: `tenant${editingFlat.flat_no}`,
+          password: editingFlat.tenant_password || `tenant${editingFlat.flat_no}`,
+          is_admin: false
+        };
+
+        if (tenantId) {
+          const { error: tenantUpdateError } = await supabase
+            .from('users')
+            .update(tenantPayload)
+            .eq('id', tenantId);
+          if (tenantUpdateError) throw tenantUpdateError;
+        } else {
+          const { data: newTenant, error: tenantInsertError } = await supabase
+            .from('users')
+            .insert([tenantPayload])
+            .select()
+            .single();
+          if (tenantInsertError) throw tenantInsertError;
+          tenantId = newTenant.id;
+        }
+      }
+
+      // 2. Perform flat update in database
       const { error } = await supabase
         .from('flats')
         .update({
-          owner_name: editingFlat.owner_name,
-          tenant_name: editingFlat.is_vacant || editingFlat.is_owner_occupied ? '' : editingFlat.tenant_name,
           is_vacant: editingFlat.is_vacant,
           is_owner_occupied: editingFlat.is_owner_occupied,
-          phone_number: editingFlat.phone_number,
-          email: editingFlat.email,
-          tenant_phone: editingFlat.is_vacant || editingFlat.is_owner_occupied ? '' : editingFlat.tenant_phone,
-          tenant_email: editingFlat.is_vacant || editingFlat.is_owner_occupied ? '' : editingFlat.tenant_email,
-          occupancy_from: editingFlat.is_vacant ? null : (editingFlat.occupancy_from || null),
-          owner_password: editingFlat.owner_password,
-          tenant_password: editingFlat.tenant_password
+          owner_id: ownerId,
+          tenant_id: tenantId,
+          occupancy_from: editingFlat.is_vacant ? null : (editingFlat.occupancy_from || null)
         })
         .eq('flat_no', editingFlat.flat_no);
 
       if (error) throw error;
+
+      // flat_to_users associations
+      await supabase.from('flat_to_users').upsert([{ flat_no: editingFlat.flat_no, user_id: ownerId, is_owner: true, is_tenant: false }], { onConflict: 'flat_no,user_id,is_owner,is_tenant' });
+      if (tenantId) {
+        await supabase.from('flat_to_users').upsert([{ flat_no: editingFlat.flat_no, user_id: tenantId, is_owner: false, is_tenant: true }], { onConflict: 'flat_no,user_id,is_owner,is_tenant' });
+      }
+      if (currentFlat?.tenant_id && currentFlat.tenant_id !== tenantId) {
+        await supabase.from('flat_to_users').update({ associated_to: new Date().toISOString() }).eq('flat_no', editingFlat.flat_no).eq('user_id', currentFlat.tenant_id).eq('is_tenant', true).is('associated_to', null);
+      }
       setEditingFlat(null);
       fetchData();
     } catch (err) {
@@ -288,10 +362,10 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
       if (req.request_type === 'occupancy_change') {
         const details = req.details || {};
         
-        // 1. Compare and archive tenant history if needed
+        // 1. Fetch current flat to compare for tenant history archive
         const { data: currentFlat, error: fetchError } = await supabase
           .from('flats')
-          .select('*')
+          .select('*, owner:users!owner_id(*), tenant:users!tenant_id(*)')
           .eq('flat_no', req.flat_no)
           .maybeSingle();
 
@@ -300,16 +374,16 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
         if (currentFlat) {
           const wasRented = currentFlat.is_vacant === false && currentFlat.is_owner_occupied === false;
           const isNewNotRented = details.is_vacant === true || details.is_owner_occupied === true;
-          const hasTenantChanged = currentFlat.tenant_name !== details.tenant_name || currentFlat.tenant_phone !== details.tenant_phone;
+          const hasTenantChanged = (currentFlat.tenant?.name || '') !== details.tenant_name || (currentFlat.tenant?.phone || '') !== details.tenant_phone;
 
           if (wasRented && (isNewNotRented || hasTenantChanged)) {
             const { error: historyError } = await supabase
               .from('tenant_history')
               .insert([{
                 flat_no: req.flat_no,
-                tenant_name: currentFlat.tenant_name || 'Unknown',
-                tenant_phone: currentFlat.tenant_phone || '',
-                tenant_email: currentFlat.tenant_email || '',
+                tenant_name: currentFlat.tenant?.name || 'Unknown',
+                tenant_phone: currentFlat.tenant?.phone || '',
+                tenant_email: currentFlat.tenant?.email || '',
                 occupied_from: currentFlat.occupancy_from || new Date().toISOString().split('T')[0],
                 occupied_to: new Date().toISOString().split('T')[0]
               }]);
@@ -318,23 +392,69 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
           }
         }
 
+        // Upsert Owner user
+        let ownerId = currentFlat?.owner_id;
+        const ownerPayload = {
+          name: details.owner_name,
+          phone: details.phone_number,
+          email: details.email || null,
+          username: `owner${req.flat_no}`,
+          password: currentFlat?.owner?.password || `owner${req.flat_no}`,
+          is_admin: false
+        };
+
+        if (ownerId) {
+          await supabase.from('users').update(ownerPayload).eq('id', ownerId);
+        } else {
+          const { data: newOwner } = await supabase.from('users').insert([ownerPayload]).select().single();
+          ownerId = newOwner.id;
+        }
+
+        // Upsert Tenant user if flat is rented
+        let tenantId = null;
+        const isRented = !details.is_vacant && !details.is_owner_occupied;
+
+        if (isRented) {
+          tenantId = currentFlat?.tenant_id;
+          const tenantPayload = {
+            name: details.tenant_name,
+            phone: details.tenant_phone,
+            email: details.tenant_email || null,
+            username: `tenant${req.flat_no}`,
+            password: currentFlat?.tenant?.password || `tenant${req.flat_no}`,
+            is_admin: false
+          };
+
+          if (tenantId) {
+            await supabase.from('users').update(tenantPayload).eq('id', tenantId);
+          } else {
+            const { data: newTenant } = await supabase.from('users').insert([tenantPayload]).select().single();
+            tenantId = newTenant.id;
+          }
+        }
+
         // 2. Perform flat table update
         const { error: updateError } = await supabase
           .from('flats')
           .update({
-            owner_name: details.owner_name,
-            phone_number: details.phone_number,
-            email: details.email,
             is_vacant: details.is_vacant,
             is_owner_occupied: details.is_owner_occupied,
-            tenant_name: details.tenant_name,
-            tenant_phone: details.tenant_phone,
-            tenant_email: details.tenant_email,
-            occupancy_from: details.occupancy_from
+            owner_id: ownerId,
+            tenant_id: tenantId,
+            occupancy_from: details.is_vacant ? null : (details.occupancy_from || null)
           })
           .eq('flat_no', req.flat_no);
 
         if (updateError) throw updateError;
+
+        // flat_to_users associations
+        await supabase.from('flat_to_users').upsert([{ flat_no: req.flat_no, user_id: ownerId, is_owner: true, is_tenant: false }], { onConflict: 'flat_no,user_id,is_owner,is_tenant' });
+        if (tenantId) {
+          await supabase.from('flat_to_users').upsert([{ flat_no: req.flat_no, user_id: tenantId, is_owner: false, is_tenant: true }], { onConflict: 'flat_no,user_id,is_owner,is_tenant' });
+        }
+        if (currentFlat?.tenant_id && currentFlat.tenant_id !== tenantId) {
+          await supabase.from('flat_to_users').update({ associated_to: new Date().toISOString() }).eq('flat_no', req.flat_no).eq('user_id', currentFlat.tenant_id).eq('is_tenant', true).is('associated_to', null);
+        }
 
       } else if (req.request_type === 'ownership_transfer') {
         const details = req.details || {};
@@ -342,7 +462,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
         // 1. Fetch current flat state to archive tenant history if needed
         const { data: currentFlat, error: fetchError } = await supabase
           .from('flats')
-          .select('*')
+          .select('*, owner:users!owner_id(*), tenant:users!tenant_id(*)')
           .eq('flat_no', req.flat_no)
           .maybeSingle();
 
@@ -355,9 +475,9 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
               .from('tenant_history')
               .insert([{
                 flat_no: req.flat_no,
-                tenant_name: currentFlat.tenant_name || 'Unknown',
-                tenant_phone: currentFlat.tenant_phone || '',
-                tenant_email: currentFlat.tenant_email || '',
+                tenant_name: currentFlat.tenant?.name || 'Unknown',
+                tenant_phone: currentFlat.tenant?.phone || '',
+                tenant_email: currentFlat.tenant?.email || '',
                 occupied_from: currentFlat.occupancy_from || new Date().toISOString().split('T')[0],
                 occupied_to: new Date().toISOString().split('T')[0]
               }]);
@@ -366,14 +486,14 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
           }
 
           // Archive old owner to owner_history
-          if (currentFlat.owner_name) {
+          if (currentFlat.owner?.name) {
             const { error: ownerHistoryError } = await supabase
               .from('owner_history')
               .insert([{
                 flat_no: req.flat_no,
-                owner_name: currentFlat.owner_name,
-                phone_number: currentFlat.phone_number || '',
-                email: currentFlat.email || '',
+                owner_name: currentFlat.owner.name,
+                phone_number: currentFlat.owner.phone || '',
+                email: currentFlat.owner.email || '',
                 transferred_at: new Date().toISOString()
               }]);
 
@@ -381,24 +501,68 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
           }
         }
 
+        // Create new owner user in users
+        const ownerPayload = {
+          name: details.new_owner_name,
+          phone: details.new_owner_phone,
+          email: details.new_owner_email || null,
+          username: `owner${req.flat_no}`,
+          password: details.new_owner_password || `owner${req.flat_no}`,
+          is_admin: false
+        };
+
+        const { data: newOwner, error: ownerInsertError } = await supabase
+          .from('users')
+          .insert([ownerPayload])
+          .select()
+          .single();
+        if (ownerInsertError) throw ownerInsertError;
+
+        // Close current owner association in flat_to_users
+        if (currentFlat?.owner_id) {
+          await supabase
+            .from('flat_to_users')
+            .update({ associated_to: new Date().toISOString() })
+            .eq('flat_no', req.flat_no)
+            .eq('user_id', currentFlat.owner_id)
+            .eq('is_owner', true)
+            .is('associated_to', null);
+        }
+
+        // Close current tenant association if one existed
+        if (currentFlat?.tenant_id) {
+          await supabase
+            .from('flat_to_users')
+            .update({ associated_to: new Date().toISOString() })
+            .eq('flat_no', req.flat_no)
+            .eq('user_id', currentFlat.tenant_id)
+            .eq('is_tenant', true)
+            .is('associated_to', null);
+        }
+
         // 2. Perform flat table update for new owner & reset occupancy status
         const { error: updateError } = await supabase
           .from('flats')
           .update({
-            owner_name: details.new_owner_name,
-            phone_number: details.new_owner_phone,
-            email: details.new_owner_email,
-            owner_password: details.new_owner_password,
+            owner_id: newOwner.id,
+            tenant_id: null,
             is_vacant: true,
             is_owner_occupied: true,
-            tenant_name: '',
-            tenant_phone: '',
-            tenant_email: '',
             occupancy_from: null
           })
           .eq('flat_no', req.flat_no);
 
         if (updateError) throw updateError;
+
+        // Upsert flat_to_users for new owner
+        await supabase
+          .from('flat_to_users')
+          .insert([{
+            flat_no: req.flat_no,
+            user_id: newOwner.id,
+            is_owner: true,
+            is_tenant: false
+          }]);
 
       } else if (req.request_type === 'payment_report') {
         const details = req.details || {};
@@ -571,8 +735,8 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
     setIsSubmittingAdmin(true);
     try {
       const { error } = await supabase
-        .from('admins')
-        .insert([{ username: uname, password: newAdmin.password, name: newAdmin.name.trim(), session_version: 1, is_active: true }]);
+        .from('users')
+        .insert([{ username: uname, password: newAdmin.password, name: newAdmin.name.trim(), session_version: 1, is_active: true, is_admin: true }]);
 
       if (error) {
         if (error.code === '23505') throw new Error(`Username "${uname}" already exists.`);
@@ -593,9 +757,10 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
     setIsSubmittingAdmin(true);
     try {
       const { error } = await supabase
-        .from('admins')
+        .from('users')
         .update({ name: editingAdmin.name.trim() })
-        .eq('username', editingAdmin.username);
+        .eq('username', editingAdmin.username)
+        .eq('is_admin', true);
 
       if (error) throw error;
 
@@ -614,7 +779,6 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
       alert('New password cannot be empty.');
       return;
     }
-    // Only block self-reset when it wasn't explicitly initiated as self-change
     if (!resettingAdminPassword.isSelf && resettingAdminPassword.username === currentAdminUsername) {
       alert('You cannot reset your own password. Ask another admin to do it.');
       return;
@@ -622,28 +786,31 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
     setIsSubmittingAdmin(true);
     try {
       const { data: current, error: fetchErr } = await supabase
-        .from('admins')
+        .from('users')
         .select('session_version')
         .eq('username', resettingAdminPassword.username)
+        .eq('is_admin', true)
         .maybeSingle();
 
-      if (fetchErr && fetchErr.code !== '42703') throw fetchErr;
+      if (fetchErr) throw fetchErr;
 
       const newVersion = (current?.session_version ?? 1) + 1;
-      const updatePayload = { password: resettingAdminPassword.password.trim() };
-      if (!fetchErr) updatePayload.session_version = newVersion;
+      const updatePayload = { 
+        password: resettingAdminPassword.password.trim(),
+        session_version: newVersion
+      };
 
       const { error } = await supabase
-        .from('admins')
+        .from('users')
         .update(updatePayload)
-        .eq('username', resettingAdminPassword.username);
+        .eq('username', resettingAdminPassword.username)
+        .eq('is_admin', true);
 
       if (error) throw error;
 
       setResettingAdminPassword(null);
 
       if (resettingAdminPassword.isSelf) {
-        // Log self out immediately — must re-login with new password
         alert('Password changed. You will now be logged out.');
         onLogout();
       } else {
@@ -658,13 +825,11 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
   };
 
   const handleToggleAdminActive = async (username, currentlyActive) => {
-    // Cannot deactivate/reactivate yourself
     if (username === currentAdminUsername) {
       alert('You cannot deactivate your own account. Ask another admin.');
       return;
     }
 
-    // Cannot deactivate the last active admin
     if (currentlyActive) {
       const activeCount = adminUsers.filter(a => a.is_active !== false).length;
       if (activeCount <= 1) {
@@ -678,23 +843,25 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
 
     try {
       const { data: current, error: fetchErr } = await supabase
-        .from('admins')
+        .from('users')
         .select('session_version')
         .eq('username', username)
+        .eq('is_admin', true)
         .maybeSingle();
 
-      // 42703 = column does not exist; tolerate gracefully
-      if (fetchErr && fetchErr.code !== '42703') throw fetchErr;
+      if (fetchErr) throw fetchErr;
 
       const newVersion = currentlyActive ? (current?.session_version ?? 1) + 1 : (current?.session_version ?? 1);
-
-      const updatePayload = { is_active: !currentlyActive };
-      if (!fetchErr) updatePayload.session_version = newVersion;
+      const updatePayload = { 
+        is_active: !currentlyActive,
+        session_version: newVersion
+      };
 
       const { error } = await supabase
-        .from('admins')
+        .from('users')
         .update(updatePayload)
-        .eq('username', username);
+        .eq('username', username)
+        .eq('is_admin', true);
 
       if (error) throw error;
 
@@ -705,17 +872,14 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
   };
 
   const handleDeleteAdmin = async (username) => {
-    // Cannot delete yourself
     if (username === currentAdminUsername) {
       alert('You cannot delete your own account while logged in.');
       return;
     }
-    // Must always keep at least one admin total
     if (adminUsers.length <= 1) {
       alert('Cannot delete the only remaining admin account.');
       return;
     }
-    // Must always keep at least one *active* admin
     const isTargetActive = adminUsers.find(a => a.username === username)?.is_active !== false;
     const activeCount = adminUsers.filter(a => a.is_active !== false).length;
     if (isTargetActive && activeCount <= 1) {
@@ -725,9 +889,10 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
     if (!confirm(`Permanently delete admin "${username}"? This cannot be undone.`)) return;
     try {
       const { error } = await supabase
-        .from('admins')
+        .from('users')
         .delete()
-        .eq('username', username);
+        .eq('username', username)
+        .eq('is_admin', true);
 
       if (error) throw error;
       fetchData();
@@ -767,23 +932,129 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
 
   const handleCreateNotice = async (e) => {
     e.preventDefault();
+    setIsSubmittingNotice(true);
+    const adminName = adminUsers.find(a => a.username === currentAdminUsername)?.name?.trim() || currentAdminUsername || 'Admin';
     try {
+      let attachmentUrl = null;
+      let attachmentName = null;
+
+      if (noticeAttachment) {
+        const fileExt = noticeAttachment.name.split('.').pop();
+        const uniqueId = Math.random().toString(36).substring(2, 15);
+        const fileName = `${uniqueId}-${Date.now()}.${fileExt}`;
+        const filePath = `announcements/${fileName}`;
+        const { error: uploadError } = await supabase.storage
+          .from('announcement-attachments')
+          .upload(filePath, noticeAttachment);
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('announcement-attachments')
+          .getPublicUrl(filePath);
+        attachmentUrl = publicUrl;
+        attachmentName = noticeAttachment.name;
+      }
+
       const { error } = await supabase
         .from('announcements')
-        .insert([newNotice]);
+        .insert([{
+          ...newNotice,
+          posted_by: 'admin',
+          posted_by_name: adminName,
+          posted_by_flat: null,
+          attachment_url: attachmentUrl,
+          attachment_name: attachmentName
+        }]);
 
       if (error) throw error;
       setNewNotice({ title: '', content: '' });
+      setNoticeAttachment(null);
+      setNoticeAttachmentPreview(null);
       setShowNoticeModal(false);
       fetchData();
+      alert('Announcement published successfully.');
     } catch (err) {
       alert('Error creating announcement: ' + err.message);
+    } finally {
+      setIsSubmittingNotice(false);
+    }
+  };
+
+  const handleUpdateNotice = async (e) => {
+    e.preventDefault();
+    setIsSubmittingNotice(true);
+    try {
+      let attachmentUrl = editingNotice.attachment_url;
+      let attachmentName = editingNotice.attachment_name;
+
+      if (noticeAttachment) {
+        // If there was a previous attachment, delete it from storage first (optional)
+        if (editingNotice.attachment_url) {
+          try {
+            const urlPath = editingNotice.attachment_url.split('/announcement-attachments/')[1];
+            if (urlPath) {
+              await supabase.storage.from('announcement-attachments').remove([urlPath]);
+            }
+          } catch (delErr) {
+            console.warn('Failed to delete old attachment from storage:', delErr);
+          }
+        }
+
+        const fileExt = noticeAttachment.name.split('.').pop();
+        const uniqueId = Math.random().toString(36).substring(2, 15);
+        const fileName = `${uniqueId}-${Date.now()}.${fileExt}`;
+        const filePath = `announcements/${fileName}`;
+        const { error: uploadError } = await supabase.storage
+          .from('announcement-attachments')
+          .upload(filePath, noticeAttachment);
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('announcement-attachments')
+          .getPublicUrl(filePath);
+        attachmentUrl = publicUrl;
+        attachmentName = noticeAttachment.name;
+      }
+
+      const { error } = await supabase
+        .from('announcements')
+        .update({
+          title: editingNotice.title,
+          content: editingNotice.content,
+          attachment_url: attachmentUrl,
+          attachment_name: attachmentName
+        })
+        .eq('id', editingNotice.id);
+
+      if (error) throw error;
+      setEditingNotice(null);
+      setNoticeAttachment(null);
+      setNoticeAttachmentPreview(null);
+      fetchData();
+      alert('Announcement updated successfully.');
+    } catch (err) {
+      alert('Error updating announcement: ' + err.message);
+    } finally {
+      setIsSubmittingNotice(false);
     }
   };
 
   const handleDeleteNotice = async (id) => {
     if (!confirm('Are you sure you want to delete this announcement?')) return;
     try {
+      // Find notice to check if it has attachments
+      const notice = announcements.find(a => a.id === id);
+      if (notice && notice.attachment_url) {
+        try {
+          const urlPath = notice.attachment_url.split('/announcement-attachments/')[1];
+          if (urlPath) {
+            await supabase.storage.from('announcement-attachments').remove([urlPath]);
+          }
+        } catch (delErr) {
+          console.warn('Failed to delete attachment from storage during notice deletion:', delErr);
+        }
+      }
+
       const { error } = await supabase
         .from('announcements')
         .delete()
@@ -1007,14 +1278,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
     setLedgerPage(1);
   };
 
-  const recordsPerPage = 10;
-  const totalRecords = processedLedgerRecords.length;
-  const totalPages = Math.ceil(totalRecords / recordsPerPage);
-  
-  const currentPage = Math.max(1, Math.min(ledgerPage, totalPages || 1));
-  const startIndex = (currentPage - 1) * recordsPerPage;
-  const endIndex = Math.min(startIndex + recordsPerPage, totalRecords);
-  const paginatedRecords = processedLedgerRecords.slice(startIndex, endIndex);
+  // All records shown — no pagination needed for 40 flats
 
   // Group flats by floor for the 3D-like grid view
   const floors = {};
@@ -1033,7 +1297,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
             style={{ height: '28px', width: 'auto' }} 
           />
           <h2 style={{ fontSize: '1.15rem', color: '#fff', margin: 0, fontWeight: '600' }}>
-            Admin
+            {adminUsers.find(a => a.username === currentAdminUsername)?.name?.trim() || currentAdminUsername || 'Admin'}
           </h2>
         </div>
         <button
@@ -1490,7 +1754,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
               <div>
                 <div className="flex-between mb-4" style={{ flexWrap: 'wrap', gap: '1rem' }}>
                   <div>
-                    <h1 style={{ fontSize: '1.75rem' }}>Dashboard Overview</h1>
+                    <h1 style={{ fontSize: '1.75rem' }}>Welcome, {adminUsers.find(a => a.username === currentAdminUsername)?.name?.trim() || currentAdminUsername || 'Admin'}</h1>
                     <p style={{ color: 'var(--text-secondary)' }}>Key performance indicators for Megha Maanay Homes</p>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', width: '100%', maxWidth: '320px' }}>
@@ -1721,12 +1985,16 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                             >
                               <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>{flat.flat_no}</span>
                               <div style={{ marginTop: '0.5rem' }}>
-                                <div style={{ fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-primary)' }}>
-                                  {name}
-                                </div>
-                                <span className={`badge ${flat.is_vacant ? 'badge-vacant' : 'badge-occupied'}`} style={{ fontSize: '0.65rem', padding: '1px 5px', marginTop: '0.25rem' }}>
-                                  {flat.is_vacant 
-                                    ? 'Vacant' 
+                                {!flat.is_vacant && (
+                                  <div style={{ fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
+                                    {flat.is_owner_occupied
+                                      ? (flat.owner_name ? `Owner: ${flat.owner_name}` : '')
+                                      : (flat.tenant_name ? `Tenant: ${flat.tenant_name}` : '')}
+                                  </div>
+                                )}
+                                <span className={`badge ${flat.is_vacant ? 'badge-vacant' : 'badge-occupied'}`} style={{ fontSize: '0.65rem', padding: '1px 5px' }}>
+                                  {flat.is_vacant
+                                    ? 'Vacant'
                                     : (flat.is_owner_occupied ? 'Owner Occupied' : 'Rented Out')}
                                 </span>
                               </div>
@@ -1855,7 +2123,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
 
                     {/* SHOWING Indicator */}
                     <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>
-                      SHOWING {totalRecords === 0 ? '0' : `${startIndex + 1}-${endIndex}`} OF {totalRecords} RECORDS
+                      SHOWING {processedLedgerRecords.length} OF {processedLedgerRecords.length} RECORDS
                     </div>
                   </div>
 
@@ -1945,14 +2213,14 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                       </tr>
                     </thead>
                     <tbody>
-                      {paginatedRecords.length === 0 ? (
+                      {processedLedgerRecords.length === 0 ? (
                         <tr>
                           <td colSpan="8" style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
                             No maintenance records found. Try modifying your search or filters.
                           </td>
                         </tr>
                       ) : (
-                        paginatedRecords.map(({ flat, record, flat_no, paid, due, status, method, date, occupantLabel }) => {
+                        processedLedgerRecords.map(({ flat, record, flat_no, paid, due, status, method, date, occupantLabel }) => {
                           return (
                             <tr key={flat_no} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
                               <td style={{ padding: '1rem 0.75rem', fontWeight: 'bold' }}>{flat_no}</td>
@@ -1995,12 +2263,12 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
 
                 {/* Mobile View: Cards */}
                 <div className="mobile-only" style={{ marginTop: '1rem', gap: '0.75rem' }}>
-                    {paginatedRecords.length === 0 ? (
+                    {processedLedgerRecords.length === 0 ? (
                       <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                         No maintenance records found. Try modifying your search or filters.
                       </div>
                     ) : (
-                      paginatedRecords.map(({ flat, record, flat_no, paid, due, status, method, date, occupantLabel }) => {
+                      processedLedgerRecords.map(({ flat, record, flat_no, paid, due, status, method, date, occupantLabel }) => {
                         const badgeClass = status === 'Paid' ? 'badge-paid' : status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid';
                         return (
                           <div key={flat_no} className="glass-panel" style={{ padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
@@ -2053,34 +2321,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                     )}
                 </div>
 
-                {/* Pagination Controls */}
-                {totalPages > 1 && (
-                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      onClick={() => setLedgerPage(prev => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1}
-                      className="btn btn-secondary"
-                      style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', opacity: currentPage === 1 ? 0.5 : 1, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
-                    >
-                      ← Previous
-                    </button>
-                    
-                    <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                      Page <strong style={{ color: 'var(--text-primary)' }}>{currentPage}</strong> of <strong style={{ color: 'var(--text-primary)' }}>{totalPages}</strong>
-                    </span>
 
-                    <button
-                      type="button"
-                      onClick={() => setLedgerPage(prev => Math.min(totalPages, prev + 1))}
-                      disabled={currentPage === totalPages}
-                      className="btn btn-secondary"
-                      style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', opacity: currentPage === totalPages ? 0.5 : 1, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
-                    >
-                      Next →
-                    </button>
-                  </div>
-                )}
               </div>
             )}
             {/* APPROVALS TAB */}
@@ -2404,28 +2645,68 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                       <p>No announcements posted yet.</p>
                     </div>
                   ) : (
-                    announcements.map(notice => (
-                      <div key={notice.id} className="glass-panel" style={{ padding: '1.5rem', position: 'relative' }}>
-                        <div className="flex-between mb-2">
-                          <h3 style={{ fontSize: '1.2rem' }}>{notice.title}</h3>
-                          <div className="flex-center gap-2">
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                              {new Date(notice.created_at).toLocaleString()}
-                            </span>
-                            <button
-                              onClick={() => handleDeleteNotice(notice.id)}
-                              className="btn btn-danger"
-                              style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                            >
-                              Delete
-                            </button>
+                    announcements.map(notice => {
+                      const canModify = true; // admin can always modify
+                      const postedBy = notice.posted_by === 'admin'
+                        ? (notice.posted_by_name || 'Admin')
+                        : notice.posted_by_flat
+                          ? `Flat ${notice.posted_by_flat}${notice.posted_by_name ? ` · ${notice.posted_by_name}` : ''}`
+                          : (notice.posted_by_name || 'Resident');
+                      return (
+                        <div key={notice.id} className="glass-panel" style={{ padding: '1.5rem', position: 'relative' }}>
+                          <div className="flex-between mb-2">
+                            <h3 style={{ fontSize: '1.2rem' }}>{notice.title}</h3>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                {new Date(notice.created_at).toLocaleString()}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  setNoticeAttachment(null);
+                                  setNoticeAttachmentPreview(null);
+                                  setEditingNotice({ ...notice });
+                                }}
+                                className="btn btn-secondary"
+                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteNotice(notice.id)}
+                                className="btn btn-danger"
+                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                          <p style={{ color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
+                            {notice.content}
+                          </p>
+                          {notice.attachment_url && (
+                            <div style={{ marginTop: '0.75rem', display: 'flex' }}>
+                              <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', maxWidth: '100%' }}>
+                                <svg width="14" height="14" fill="none" stroke="var(--secondary)" strokeWidth="2" viewBox="0 0 24 24">
+                                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                                </svg>
+                                <a 
+                                  href={notice.attachment_url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  style={{ color: 'var(--secondary)', fontSize: '0.82rem', textDecoration: 'none', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                >
+                                  {notice.attachment_name || 'View Attachment'}
+                                </a>
+                              </div>
+                            </div>
+                          )}
+                          <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                            {postedBy}
                           </div>
                         </div>
-                        <p style={{ color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
-                          {notice.content}
-                        </p>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -2811,46 +3092,8 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                   <p style={{ color: 'var(--text-secondary)' }}>Manage portal-wide configurations and admin users</p>
                 </div>
 
-                {/* ---- Maintenance Fee ---- */}
-                <div className="glass-panel settings-panel">
-                  <form onSubmit={handleSaveSettings}>
-                    <h3 style={{ fontSize: '1.2rem', marginBottom: '1.25rem', color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
-                      Maintenance Fee Configuration
-                    </h3>
-
-                    <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.5' }}>
-                      Set the default monthly maintenance fee that is charged to each flat. Changes will apply to all calculations and new payment reports generated on the portal.
-                    </p>
-
-                    <div className="input-group settings-fee-input" style={{ marginBottom: '1.5rem' }}>
-                      <label htmlFor="settings-maintenance-fee" style={{ fontWeight: '600' }}>Monthly Maintenance Fee (₹)</label>
-                      <input
-                        id="settings-maintenance-fee"
-                        type="number"
-                        min="1"
-                        step="1"
-                        className="input-field"
-                        value={maintenanceAmountInput}
-                        onChange={(e) => setMaintenanceAmountInput(e.target.value)}
-                        required
-                        placeholder="e.g. 2000"
-                        style={{ padding: '0.75rem' }}
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="btn btn-primary"
-                      disabled={isSavingSettings}
-                      style={{ padding: '0.75rem 1.5rem', width: '100%', maxWidth: '200px' }}
-                    >
-                      {isSavingSettings ? 'Saving...' : 'Save Settings'}
-                    </button>
-                  </form>
-                </div>
-
                 {/* ---- Admin User Management ---- */}
-                <div className="glass-panel settings-panel" style={{ marginBottom: 0 }}>
+                <div className="glass-panel settings-panel">
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                     <div style={{ minWidth: 0 }}>
                       <h3 style={{ fontSize: '1.2rem', color: 'var(--primary)', margin: 0 }}>
@@ -3015,6 +3258,46 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                     </div>
                   )}
                 </div>
+
+
+                {/* ---- Maintenance Fee ---- */}
+                <div className="glass-panel settings-panel">
+                  <form onSubmit={handleSaveSettings}>
+                    <h3 style={{ fontSize: '1.2rem', marginBottom: '1.25rem', color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
+                      Maintenance Fee Configuration
+                    </h3>
+
+                    <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.5' }}>
+                      Set the default monthly maintenance fee that is charged to each flat. Changes will apply to all calculations and new payment reports generated on the portal.
+                    </p>
+
+                    <div className="input-group settings-fee-input" style={{ marginBottom: '1.5rem' }}>
+                      <label htmlFor="settings-maintenance-fee" style={{ fontWeight: '600' }}>Monthly Maintenance Fee (₹)</label>
+                      <input
+                        id="settings-maintenance-fee"
+                        type="number"
+                        min="1"
+                        step="1"
+                        className="input-field"
+                        value={maintenanceAmountInput}
+                        onChange={(e) => setMaintenanceAmountInput(e.target.value)}
+                        required
+                        placeholder="e.g. 2000"
+                        style={{ padding: '0.75rem' }}
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      disabled={isSavingSettings}
+                      style={{ padding: '0.75rem 1.5rem', width: '100%', maxWidth: '200px' }}
+                    >
+                      {isSavingSettings ? 'Saving...' : 'Save Settings'}
+                    </button>
+                  </form>
+                </div>
+
               </div>
             )}
           </>
@@ -3211,11 +3494,11 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
       )}
 
       {/* POST ANNOUNCEMENT MODAL */}
-      {showNoticeModal && (
+      {(showNoticeModal || editingNotice) && (
         <div className="modal-overlay">
           <div className="modal-content glass-panel glow-primary">
-            <h2 style={{ marginBottom: '1.5rem' }}>Post New Announcement</h2>
-            <form onSubmit={handleCreateNotice}>
+            <h2 style={{ marginBottom: '1.5rem' }}>{editingNotice ? 'Edit Announcement' : 'Post New Announcement'}</h2>
+            <form onSubmit={editingNotice ? handleUpdateNotice : handleCreateNotice}>
               <div className="input-group">
                 <label htmlFor="notice-title-input">Title</label>
                 <input
@@ -3223,8 +3506,10 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                   type="text"
                   className="input-field"
                   placeholder="Important notice title"
-                  value={newNotice.title}
-                  onChange={(e) => setNewNotice({ ...newNotice, title: e.target.value })}
+                  value={editingNotice ? editingNotice.title : newNotice.title}
+                  onChange={(e) => editingNotice
+                    ? setEditingNotice({ ...editingNotice, title: e.target.value })
+                    : setNewNotice({ ...newNotice, title: e.target.value })}
                   required
                 />
               </div>
@@ -3236,19 +3521,89 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                   className="input-field"
                   rows="5"
                   placeholder="Write notice details here..."
-                  value={newNotice.content}
-                  onChange={(e) => setNewNotice({ ...newNotice, content: e.target.value })}
+                  value={editingNotice ? editingNotice.content : newNotice.content}
+                  onChange={(e) => editingNotice
+                    ? setEditingNotice({ ...editingNotice, content: e.target.value })
+                    : setNewNotice({ ...newNotice, content: e.target.value })}
                   required
                   style={{ fontFamily: 'inherit', resize: 'vertical' }}
                 />
               </div>
 
+              <div className="input-group" style={{ marginTop: '1rem' }}>
+                <label htmlFor="notice-file-input">Attachment (optional)</label>
+                <input
+                  id="notice-file-input"
+                  type="file"
+                  className="input-field"
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      setNoticeAttachment(file);
+                      if (file.type.startsWith('image/')) {
+                        setNoticeAttachmentPreview(URL.createObjectURL(file));
+                      } else {
+                        setNoticeAttachmentPreview(null);
+                      }
+                    }
+                  }}
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                  style={{ padding: '0.5rem' }}
+                />
+                {noticeAttachmentPreview && (
+                  <div style={{ marginTop: '0.75rem', position: 'relative', width: 'fit-content' }}>
+                    <img 
+                      src={noticeAttachmentPreview} 
+                      alt="Attachment Preview" 
+                      style={{ maxHeight: '120px', borderRadius: '8px', border: '1px solid var(--glass-border)' }} 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { setNoticeAttachment(null); setNoticeAttachmentPreview(null); document.getElementById('notice-file-input').value = ''; }}
+                      style={{ position: 'absolute', top: '-8px', right: '-8px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+                {!noticeAttachmentPreview && noticeAttachment && (
+                  <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {noticeAttachment.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { setNoticeAttachment(null); document.getElementById('notice-file-input').value = ''; }}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.85rem' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+                {editingNotice && editingNotice.attachment_url && !noticeAttachment && (
+                  <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                    <span style={{ fontSize: '0.82rem', color: 'var(--secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      Current: {editingNotice.attachment_name || 'Attachment'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingNotice({ ...editingNotice, attachment_url: null, attachment_name: null });
+                      }}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.85rem' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="flex-center gap-2" style={{ marginTop: '2rem' }}>
-                <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowNoticeModal(false)}>
+                <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowNoticeModal(false); setEditingNotice(null); setNoticeAttachment(null); setNoticeAttachmentPreview(null); }}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                  Publish Notice
+                <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={isSubmittingNotice}>
+                  {isSubmittingNotice ? 'Saving...' : (editingNotice ? 'Save Changes' : 'Publish Notice')}
                 </button>
               </div>
             </form>

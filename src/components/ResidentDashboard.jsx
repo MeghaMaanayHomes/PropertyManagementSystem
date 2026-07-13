@@ -25,6 +25,12 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [newContact, setNewContact] = useState({ name: '', phone_number: '', details: '' });
   const [submittingContact, setSubmittingContact] = useState(false);
+  const [newNotice, setNewNotice] = useState({ title: '', content: '' });
+  const [showNoticeModal, setShowNoticeModal] = useState(false);
+  const [editingNotice, setEditingNotice] = useState(null); // {id, title, content}
+  const [noticeAttachment, setNoticeAttachment] = useState(null); // File object
+  const [noticeAttachmentPreview, setNoticeAttachmentPreview] = useState(null); // URL string
+  const [isSubmittingNotice, setIsSubmittingNotice] = useState(false);
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
@@ -102,14 +108,31 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
       // 1. Fetch flat details (to get freshest data)
       const { data: flatData, error: flatError } = await supabase
         .from('flats')
-        .select('*')
+        .select('flat_no, is_vacant, is_owner_occupied, occupancy_from, owner_id, tenant_id, owner:users!owner_id(*), tenant:users!tenant_id(*)')
         .eq('flat_no', flatNo)
         .maybeSingle();
 
       if (flatError) throw flatError;
 
       if (flatData) {
-        setFlatDetails(flatData);
+        // Map raw relational fields into the legacy flat shape for UI backward compatibility
+        const mappedFlat = {
+          flat_no: flatData.flat_no,
+          is_vacant: flatData.is_vacant,
+          is_owner_occupied: flatData.is_owner_occupied,
+          occupancy_from: flatData.occupancy_from,
+          owner_id: flatData.owner_id,
+          tenant_id: flatData.tenant_id,
+          owner_name: flatData.owner?.name || '',
+          phone_number: flatData.owner?.phone || '',
+          email: flatData.owner?.email || '',
+          owner_password: flatData.owner?.password || '',
+          tenant_name: flatData.tenant?.name || '',
+          tenant_phone: flatData.tenant?.phone || '',
+          tenant_email: flatData.tenant?.email || '',
+          tenant_password: flatData.tenant?.password || ''
+        };
+        setFlatDetails(mappedFlat);
       }
 
       // 2. Fetch maintenance payments
@@ -291,6 +314,146 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
     }
   };
 
+  const handleCreateNotice = async (e) => {
+    e.preventDefault();
+    setIsSubmittingNotice(true);
+    const residentName = session.role === 'owner'
+      ? (flatDetails?.owner_name?.trim() || `Owner of ${flatNo}`)
+      : (flatDetails?.tenant_name?.trim() || `Tenant of ${flatNo}`);
+    try {
+      let attachmentUrl = null;
+      let attachmentName = null;
+
+      if (noticeAttachment) {
+        const fileExt = noticeAttachment.name.split('.').pop();
+        const uniqueId = Math.random().toString(36).substring(2, 15);
+        const fileName = `${uniqueId}-${Date.now()}.${fileExt}`;
+        const filePath = `announcements/${fileName}`;
+        const { error: uploadError } = await supabase.storage
+          .from('announcement-attachments')
+          .upload(filePath, noticeAttachment);
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('announcement-attachments')
+          .getPublicUrl(filePath);
+        attachmentUrl = publicUrl;
+        attachmentName = noticeAttachment.name;
+      }
+
+      const { error } = await supabase
+        .from('announcements')
+        .insert([{
+          ...newNotice,
+          posted_by: session.role,
+          posted_by_name: residentName,
+          posted_by_flat: flatNo,
+          attachment_url: attachmentUrl,
+          attachment_name: attachmentName
+        }]);
+
+      if (error) throw error;
+      setNewNotice({ title: '', content: '' });
+      setNoticeAttachment(null);
+      setNoticeAttachmentPreview(null);
+      setShowNoticeModal(false);
+      fetchResidentData();
+      alert('Announcement published successfully.');
+    } catch (err) {
+      alert('Error creating announcement: ' + err.message);
+    } finally {
+      setIsSubmittingNotice(false);
+    }
+  };
+
+  const handleUpdateNotice = async (e) => {
+    e.preventDefault();
+    setIsSubmittingNotice(true);
+    try {
+      let attachmentUrl = editingNotice.attachment_url;
+      let attachmentName = editingNotice.attachment_name;
+
+      if (noticeAttachment) {
+        // If there was a previous attachment, delete it from storage first
+        if (editingNotice.attachment_url) {
+          try {
+            const urlPath = editingNotice.attachment_url.split('/announcement-attachments/')[1];
+            if (urlPath) {
+              await supabase.storage.from('announcement-attachments').remove([urlPath]);
+            }
+          } catch (delErr) {
+            console.warn('Failed to delete old attachment from storage:', delErr);
+          }
+        }
+
+        const fileExt = noticeAttachment.name.split('.').pop();
+        const uniqueId = Math.random().toString(36).substring(2, 15);
+        const fileName = `${uniqueId}-${Date.now()}.${fileExt}`;
+        const filePath = `announcements/${fileName}`;
+        const { error: uploadError } = await supabase.storage
+          .from('announcement-attachments')
+          .upload(filePath, noticeAttachment);
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('announcement-attachments')
+          .getPublicUrl(filePath);
+        attachmentUrl = publicUrl;
+        attachmentName = noticeAttachment.name;
+      }
+
+      const { error } = await supabase
+        .from('announcements')
+        .update({
+          title: editingNotice.title,
+          content: editingNotice.content,
+          attachment_url: attachmentUrl,
+          attachment_name: attachmentName
+        })
+        .eq('id', editingNotice.id);
+
+      if (error) throw error;
+      setEditingNotice(null);
+      setNoticeAttachment(null);
+      setNoticeAttachmentPreview(null);
+      fetchResidentData();
+      alert('Announcement updated successfully.');
+    } catch (err) {
+      alert('Error updating announcement: ' + err.message);
+    } finally {
+      setIsSubmittingNotice(false);
+    }
+  };
+
+  const handleDeleteNotice = async (id) => {
+    if (!confirm('Are you sure you want to delete this announcement?')) return;
+    try {
+      // Find notice to check if it has attachments
+      const notice = announcements.find(a => a.id === id);
+      if (notice && notice.attachment_url) {
+        try {
+          const urlPath = notice.attachment_url.split('/announcement-attachments/')[1];
+          if (urlPath) {
+            await supabase.storage.from('announcement-attachments').remove([urlPath]);
+          }
+        } catch (delErr) {
+          console.warn('Failed to delete attachment from storage during notice deletion:', delErr);
+        }
+      }
+
+      const { error } = await supabase
+        .from('announcements')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      fetchResidentData();
+      alert('Announcement deleted.');
+    } catch (err) {
+      alert('Error deleting announcement: ' + err.message);
+    }
+  };
+
   const handleChangePassword = async (e) => {
     e.preventDefault();
     setPasswordMessage({ type: '', text: '' });
@@ -314,10 +477,15 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
     }
 
     try {
+      const targetUserId = session.userId || (session.role === 'owner' ? flatDetails.owner_id : flatDetails.tenant_id);
+      if (!targetUserId) {
+        throw new Error('Resident user account not found.');
+      }
+
       const { error } = await supabase
-        .from('flats')
-        .update({ [passwordColumn]: passwordForm.newPassword })
-        .eq('flat_no', flatNo);
+        .from('users')
+        .update({ password: passwordForm.newPassword })
+        .eq('id', targetUserId);
 
       if (error) throw error;
       
@@ -511,7 +679,9 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
             style={{ height: '28px', width: 'auto' }} 
           />
           <h2 style={{ fontSize: '1.15rem', color: '#fff', margin: 0, fontWeight: '600' }}>
-            Flat {flatNo}
+            {session.role === 'owner'
+              ? (flatDetails?.owner_name || `Flat ${flatNo}`)
+              : (flatDetails?.tenant_name || `Flat ${flatNo}`)}
           </h2>
         </div>
         <button
@@ -553,7 +723,9 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
           />
           <div>
             <h2>
-              Flat {flatNo}
+              {session.role === 'owner'
+                ? (flatDetails?.owner_name || `Flat ${flatNo}`)
+                : (flatDetails?.tenant_name || `Flat ${flatNo}`)}
             </h2>
             <p>
               {session.role === 'owner' ? 'Owner' : 'Tenant'}
@@ -675,7 +847,7 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
             {activeTab === 'overview' && (
               <div>
                 <div className="mb-4">
-                  <h1 style={{ fontSize: '1.75rem' }}>Welcome, Flat {flatNo}</h1>
+                  <h1 style={{ fontSize: '1.75rem' }}>Welcome, {session.role === 'owner' ? (flatDetails?.owner_name || `Flat ${flatNo}`) : (flatDetails?.tenant_name || `Flat ${flatNo}`)}</h1>
                   <p style={{ color: 'var(--text-secondary)' }}>Apartment Resident Dashboard</p>
                 </div>
 
@@ -1604,9 +1776,18 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
             {/* NOTICEBOARD TAB */}
             {activeTab === 'notices' && (
               <div>
-                <div className="mb-4">
-                  <h1 style={{ fontSize: '1.75rem' }}>Community Notice Board</h1>
-                  <p style={{ color: 'var(--text-secondary)' }}>Important updates posted by the apartment association</p>
+                <div className="flex-between mb-4" style={{ flexWrap: 'wrap', gap: '1rem' }}>
+                  <div>
+                    <h1 style={{ fontSize: '1.75rem' }}>Community Notice Board</h1>
+                    <p style={{ color: 'var(--text-secondary)' }}>Important updates and community notices posted by residents and management</p>
+                  </div>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => setShowNoticeModal(true)}
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    + Post Announcement
+                  </button>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -1615,19 +1796,74 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
                       No announcements posted yet.
                     </div>
                   ) : (
-                    announcements.map(notice => (
-                      <div key={notice.id} className="glass-panel" style={{ padding: '1.5rem' }}>
-                        <div className="flex-between mb-2" style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
-                          <h3 style={{ fontSize: '1.15rem', color: 'var(--primary)' }}>{notice.title}</h3>
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                            {new Date(notice.created_at).toLocaleString()}
-                          </span>
+                    announcements.map(notice => {
+                      // Only the resident who posted it can edit or delete (based on flat and role)
+                      const isAuthor = notice.posted_by_flat === flatNo && notice.posted_by === session.role;
+                      const postedBy = notice.posted_by === 'admin'
+                        ? (notice.posted_by_name || 'Admin')
+                        : notice.posted_by_flat
+                          ? `Flat ${notice.posted_by_flat}${notice.posted_by_name ? ` · ${notice.posted_by_name}` : ''}`
+                          : (notice.posted_by_name || 'Resident');
+                      return (
+                        <div key={notice.id} className="glass-panel" style={{ padding: '1.5rem', position: 'relative' }}>
+                          <div className="flex-between mb-2" style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem' }}>
+                            <h3 style={{ fontSize: '1.15rem', color: 'var(--primary)' }}>{notice.title}</h3>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                {new Date(notice.created_at).toLocaleString()}
+                              </span>
+                              {isAuthor && (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      setNoticeAttachment(null);
+                                      setNoticeAttachmentPreview(null);
+                                      setEditingNotice({ ...notice });
+                                    }}
+                                    className="btn btn-secondary"
+                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteNotice(notice.id)}
+                                    className="btn btn-danger"
+                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <p style={{ color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
+                            {notice.content}
+                          </p>
+                          {notice.attachment_url && (
+                            <div style={{ marginTop: '0.75rem', display: 'flex' }}>
+                              <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', maxWidth: '100%' }}>
+                                <svg width="14" height="14" fill="none" stroke="var(--secondary)" strokeWidth="2" viewBox="0 0 24 24">
+                                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                                </svg>
+                                <a 
+                                  href={notice.attachment_url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  style={{ color: 'var(--secondary)', fontSize: '0.82rem', textDecoration: 'none', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                >
+                                  {notice.attachment_name || 'View Attachment'}
+                                </a>
+                              </div>
+                            </div>
+                          )}
+                          <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                            {postedBy}
+                            {isAuthor && <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>(You)</span>}
+                          </div>
                         </div>
-                        <p style={{ color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
-                          {notice.content}
-                        </p>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -2101,6 +2337,122 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
             )}
           </>
         )}
+      {(showNoticeModal || editingNotice) && (
+        <div className="modal-overlay">
+          <div className="modal-content glass-panel glow-primary">
+            <h2 style={{ marginBottom: '1.5rem' }}>{editingNotice ? 'Edit Announcement' : 'Post New Announcement'}</h2>
+            <form onSubmit={editingNotice ? handleUpdateNotice : handleCreateNotice}>
+              <div className="input-group">
+                <label htmlFor="notice-title-input">Title</label>
+                <input
+                  id="notice-title-input"
+                  type="text"
+                  className="input-field"
+                  placeholder="Notice title"
+                  value={editingNotice ? editingNotice.title : newNotice.title}
+                  onChange={(e) => editingNotice
+                    ? setEditingNotice({ ...editingNotice, title: e.target.value })
+                    : setNewNotice({ ...newNotice, title: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="input-group">
+                <label htmlFor="notice-content-textarea">Content</label>
+                <textarea
+                  id="notice-content-textarea"
+                  className="input-field"
+                  rows="5"
+                  placeholder="Write announcement details here..."
+                  value={editingNotice ? editingNotice.content : newNotice.content}
+                  onChange={(e) => editingNotice
+                    ? setEditingNotice({ ...editingNotice, content: e.target.value })
+                    : setNewNotice({ ...newNotice, content: e.target.value })}
+                  required
+                  style={{ fontFamily: 'inherit', resize: 'vertical' }}
+                />
+              </div>
+
+              <div className="input-group" style={{ marginTop: '1rem' }}>
+                <label htmlFor="notice-file-input">Attachment (optional)</label>
+                <input
+                  id="notice-file-input"
+                  type="file"
+                  className="input-field"
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      setNoticeAttachment(file);
+                      if (file.type.startsWith('image/')) {
+                        setNoticeAttachmentPreview(URL.createObjectURL(file));
+                      } else {
+                        setNoticeAttachmentPreview(null);
+                      }
+                    }
+                  }}
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                  style={{ padding: '0.5rem' }}
+                />
+                {noticeAttachmentPreview && (
+                  <div style={{ marginTop: '0.75rem', position: 'relative', width: 'fit-content' }}>
+                    <img 
+                      src={noticeAttachmentPreview} 
+                      alt="Attachment Preview" 
+                      style={{ maxHeight: '120px', borderRadius: '8px', border: '1px solid var(--glass-border)' }} 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => { setNoticeAttachment(null); setNoticeAttachmentPreview(null); document.getElementById('notice-file-input').value = ''; }}
+                      style={{ position: 'absolute', top: '-8px', right: '-8px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+                {!noticeAttachmentPreview && noticeAttachment && (
+                  <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {noticeAttachment.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { setNoticeAttachment(null); document.getElementById('notice-file-input').value = ''; }}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.85rem' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+                {editingNotice && editingNotice.attachment_url && !noticeAttachment && (
+                  <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
+                    <span style={{ fontSize: '0.82rem', color: 'var(--secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      Current: {editingNotice.attachment_name || 'Attachment'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingNotice({ ...editingNotice, attachment_url: null, attachment_name: null });
+                      }}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.85rem' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-center gap-2" style={{ marginTop: '2rem' }}>
+                <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setShowNoticeModal(false); setEditingNotice(null); setNoticeAttachment(null); setNoticeAttachmentPreview(null); }}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={isSubmittingNotice}>
+                  {isSubmittingNotice ? 'Saving...' : (editingNotice ? 'Save Changes' : 'Publish Notice')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       </main>
     </div>
   );

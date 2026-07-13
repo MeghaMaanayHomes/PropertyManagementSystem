@@ -65,12 +65,19 @@
   background: var(--glass-highlight);
 }
 
+html {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 body {
   min-height: 100vh;
   background: radial-gradient(circle at 0% 0%, #111827 0%, #060814 100%);
   background-attachment: fixed;
   overflow-x: hidden;
-  max-width: 100vw;
+  max-width: 100%;
+  width: 100%;
+  position: relative;
 }
 
 /* Glassmorphic Utilities */
@@ -118,6 +125,8 @@ h1, h2, h3, h4, h5, h6 {
   min-height: 100vh;
   position: relative;
   overflow-x: hidden;
+  max-width: 100%;
+  width: 100%;
 }
 
 .main-content {
@@ -373,7 +382,6 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .flat-card {
-  aspect-ratio: 1.2;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -381,6 +389,7 @@ h1, h2, h3, h4, h5, h6 {
   cursor: pointer;
   position: relative;
   overflow: hidden;
+  min-height: 80px;
 }
 
 .flat-card.occupied {
