@@ -1721,7 +1721,7 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
             {activeTab === 'map' && (
               <div>
                 <div className="mb-4">
-                  <h1 style={{ fontSize: '1.75rem' }}>Building Map & Occupancy</h1>
+                  <h1 style={{ fontSize: '1.75rem' }}>Flats</h1>
                   <p style={{ color: 'var(--text-secondary)' }}>View the occupancy status of all flats in Megha Maanay Homes</p>
                 </div>
 

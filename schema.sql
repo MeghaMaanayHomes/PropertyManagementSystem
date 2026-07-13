@@ -275,3 +275,47 @@ DROP POLICY IF EXISTS "Allow public reads for notices" ON storage.objects;
 CREATE POLICY "Allow public reads for notices"
   ON storage.objects FOR SELECT TO anon, authenticated
   USING (bucket_id = 'announcement-attachments');
+
+-- 17. Create expenses table
+CREATE TABLE IF NOT EXISTS public.expenses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    amount NUMERIC(10, 2) NOT NULL,
+    expense_date DATE NOT NULL,
+    category TEXT NOT NULL,              -- 'Maintenance', 'Salaries', 'Utilities', 'Repairs', 'Other'
+    description TEXT DEFAULT '',
+    attachment_url TEXT,                 -- Path to file in Supabase storage
+    attachment_name TEXT,                -- original filename
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Disable Row Level Security on expenses
+ALTER TABLE public.expenses DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON TABLE public.expenses TO anon, authenticated, service_role;
+
+-- 18. Storage bucket: expense-attachments
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'expense-attachments',
+  'expense-attachments',
+  true,
+  10485760, -- 10 MB
+  ARRAY['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/plain']
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- Drop and recreate expense-attachments storage policies
+DROP POLICY IF EXISTS "Allow public uploads for expenses" ON storage.objects;
+CREATE POLICY "Allow public uploads for expenses"
+  ON storage.objects FOR INSERT TO anon, authenticated
+  WITH CHECK (bucket_id = 'expense-attachments');
+
+DROP POLICY IF EXISTS "Allow public updates for expenses" ON storage.objects;
+CREATE POLICY "Allow public updates for expenses"
+  ON storage.objects FOR UPDATE TO anon, authenticated
+  USING (bucket_id = 'expense-attachments');
+
+DROP POLICY IF EXISTS "Allow public reads for expenses" ON storage.objects;
+CREATE POLICY "Allow public reads for expenses"
+  ON storage.objects FOR SELECT TO anon, authenticated
+  USING (bucket_id = 'expense-attachments');

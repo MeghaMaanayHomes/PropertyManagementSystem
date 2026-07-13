@@ -63,6 +63,24 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
   const [resettingAdminPassword, setResettingAdminPassword] = useState(null); // { username, password }
   const [isSubmittingAdmin, setIsSubmittingAdmin] = useState(false);
 
+  // Expenses States
+  const [expenses, setExpenses] = useState([]);
+  const [expenseSearchQuery, setExpenseSearchQuery] = useState('');
+  const [selectedExpenseCategory, setSelectedExpenseCategory] = useState('All');
+  const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
+  const [editingExpense, setEditingExpense] = useState(null);
+  const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({
+    title: '',
+    amount: '',
+    expense_date: new Date().toISOString().split('T')[0],
+    category: 'Maintenance',
+    description: '',
+    attachment: null
+  });
+  const [expenseAttachmentPreview, setExpenseAttachmentPreview] = useState(null);
+  const [editingExpenseAttachmentPreview, setEditingExpenseAttachmentPreview] = useState(null);
+
   // Statistics
   const [stats, setStats] = useState({
     totalFlats: 40,
@@ -84,6 +102,12 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
     setContactsSearch('');
     setShowAddContactModal(false);
     setIsMobileMenuOpen(false);
+    setExpenseSearchQuery('');
+    setSelectedExpenseCategory('All');
+    setShowAddExpenseModal(false);
+    setEditingExpense(null);
+    setExpenseAttachmentPreview(null);
+    setEditingExpenseAttachmentPreview(null);
   };
 
   useEffect(() => {
@@ -126,6 +150,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
         { data: settingsData,    error: settingsError },
         contactsResult,
         adminsResult,
+        expensesResult,
       ] = await Promise.all([
         supabase
           .from('flats')
@@ -137,7 +162,8 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
         supabase.from('approvals').select('*').order('created_at', { ascending: false }),
         supabase.from('settings').select('*'),
         supabase.from('contacts').select('*').order('name', { ascending: true }).then(r => r).catch(() => ({ data: [], error: null })),
-        supabase.from('users').select('id, username, name, is_active, created_at').eq('is_admin', true).order('created_at', { ascending: true }).then(r => r).catch(() => ({ data: [], error: null }))
+        supabase.from('users').select('id, username, name, is_active, created_at').eq('is_admin', true).order('created_at', { ascending: true }).then(r => r).catch(() => ({ data: [], error: null })),
+        supabase.from('expenses').select('*').order('expense_date', { ascending: false }).then(r => r).catch(() => ({ data: [], error: null }))
       ]);
 
       if (flatsError) throw flatsError;
@@ -169,6 +195,9 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
       setAnnouncements(noticesData || []);
       setComplaints(complaintsData || []);
       setApprovals(approvalsData || []);
+      if (expensesResult?.data) {
+        setExpenses(expensesResult.data);
+      }
 
       // Settings
       let currentMaintenanceAmount = 2000;
@@ -1258,6 +1287,182 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
     }
   };
 
+  const handleExpenseAttachmentFile = (file) => {
+    if (!file) return;
+    setExpenseForm(prev => ({ ...prev, attachment: file }));
+    if (file.type.startsWith('image/')) {
+      setExpenseAttachmentPreview(URL.createObjectURL(file));
+    } else {
+      setExpenseAttachmentPreview(null);
+    }
+  };
+
+  const handleEditingExpenseAttachmentFile = (file) => {
+    if (!file) return;
+    setEditingExpense(prev => ({ ...prev, newAttachment: file }));
+    if (file.type.startsWith('image/')) {
+      setEditingExpenseAttachmentPreview(URL.createObjectURL(file));
+    } else {
+      setEditingExpenseAttachmentPreview(null);
+    }
+  };
+
+  const handleSaveExpense = async (e) => {
+    e.preventDefault();
+    if (!expenseForm.title || !expenseForm.amount || !expenseForm.expense_date) {
+      alert('Title, Amount, and Date are required.');
+      return;
+    }
+    const parsedAmount = parseFloat(expenseForm.amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      alert('Please enter a valid amount.');
+      return;
+    }
+
+    setIsSubmittingExpense(true);
+    try {
+      let attachmentUrl = null;
+      let attachmentName = null;
+
+      if (expenseForm.attachment) {
+        const file = expenseForm.attachment;
+        const fileExt = file.name.split('.').pop();
+        const rand = Math.random().toString(36).substring(2, 10);
+        const fileName = `${Date.now()}_${rand}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('expense-attachments')
+          .upload(fileName, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('expense-attachments')
+          .getPublicUrl(fileName);
+
+        attachmentUrl = publicUrl;
+        attachmentName = file.name;
+      }
+
+      const { error } = await supabase
+        .from('expenses')
+        .insert([{
+          title: expenseForm.title.trim(),
+          amount: parsedAmount,
+          expense_date: expenseForm.expense_date,
+          category: expenseForm.category,
+          description: expenseForm.description.trim(),
+          attachment_url: attachmentUrl,
+          attachment_name: attachmentName
+        }]);
+
+      if (error) throw error;
+
+      setShowAddExpenseModal(false);
+      setExpenseForm({
+        title: '',
+        amount: '',
+        expense_date: new Date().toISOString().split('T')[0],
+        category: 'Maintenance',
+        description: '',
+        attachment: null
+      });
+      setExpenseAttachmentPreview(null);
+      fetchData();
+    } catch (err) {
+      alert('Error saving expense: ' + err.message);
+    } finally {
+      setIsSubmittingExpense(false);
+    }
+  };
+
+  const handleUpdateExpense = async (e) => {
+    e.preventDefault();
+    if (!editingExpense.title || !editingExpense.amount || !editingExpense.expense_date) {
+      alert('Title, Amount, and Date are required.');
+      return;
+    }
+    const parsedAmount = parseFloat(editingExpense.amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      alert('Please enter a valid amount.');
+      return;
+    }
+
+    setIsSubmittingExpense(true);
+    try {
+      let attachmentUrl = editingExpense.attachment_url;
+      let attachmentName = editingExpense.attachment_name;
+
+      if (editingExpense.newAttachment) {
+        if (editingExpense.attachment_url) {
+          const oldPath = editingExpense.attachment_url.split('/').pop();
+          await supabase.storage.from('expense-attachments').remove([oldPath]);
+        }
+
+        const file = editingExpense.newAttachment;
+        const fileExt = file.name.split('.').pop();
+        const rand = Math.random().toString(36).substring(2, 10);
+        const fileName = `${Date.now()}_${rand}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('expense-attachments')
+          .upload(fileName, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('expense-attachments')
+          .getPublicUrl(fileName);
+
+        attachmentUrl = publicUrl;
+        attachmentName = file.name;
+      }
+
+      const { error } = await supabase
+        .from('expenses')
+        .update({
+          title: editingExpense.title.trim(),
+          amount: parsedAmount,
+          expense_date: editingExpense.expense_date,
+          category: editingExpense.category,
+          description: (editingExpense.description || '').trim(),
+          attachment_url: attachmentUrl,
+          attachment_name: attachmentName
+        })
+        .eq('id', editingExpense.id);
+
+      if (error) throw error;
+
+      setEditingExpense(null);
+      setEditingExpenseAttachmentPreview(null);
+      fetchData();
+    } catch (err) {
+      alert('Error updating expense: ' + err.message);
+    } finally {
+      setIsSubmittingExpense(false);
+    }
+  };
+
+  const handleDeleteExpense = async (expense) => {
+    if (!confirm(`Are you sure you want to delete the expense "${expense.title}"?`)) return;
+    try {
+      if (expense.attachment_url) {
+        const path = expense.attachment_url.split('/').pop();
+        await supabase.storage.from('expense-attachments').remove([path]);
+      }
+
+      const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('id', expense.id);
+
+      if (error) throw error;
+      fetchData();
+    } catch (err) {
+      alert('Error deleting expense: ' + err.message);
+    }
+  };
+
   useEffect(() => {
     setLedgerPage(1);
   }, [ledgerSearchQuery, ledgerStatusFilter, ledgerOccupancyFilter, ledgerMethodFilter]);
@@ -1375,6 +1580,26 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
           : (valA < valB ? 1 : -1);
       }
     });
+
+    return list;
+  })();
+
+  // Processed (filtered, searched) expenses
+  const processedExpenses = (() => {
+    let list = [...expenses];
+
+    if (expenseSearchQuery.trim()) {
+      const q = expenseSearchQuery.toLowerCase();
+      list = list.filter(e => 
+        e.title.toLowerCase().includes(q) || 
+        (e.description || '').toLowerCase().includes(q) || 
+        e.category.toLowerCase().includes(q)
+      );
+    }
+
+    if (selectedExpenseCategory !== 'All') {
+      list = list.filter(e => e.category === selectedExpenseCategory);
+    }
 
     return list;
   })();
@@ -1532,6 +1757,18 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
             </svg>
             Contacts Directory
+          </button>
+          <button
+            onClick={() => handleTabChange('expenses')}
+            className={`btn ${activeTab === 'expenses' ? 'btn-primary' : 'btn-secondary'}`}
+          >
+            <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect>
+              <line x1="12" y1="18" x2="12" y2="18.01"></line>
+              <line x1="12" y1="6" x2="12" y2="14"></line>
+              <path d="M16 10H8"></path>
+            </svg>
+            Expenses Ledger
           </button>
           <button
             onClick={() => handleTabChange('settings')}
@@ -3199,6 +3436,188 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
               </div>
             )}
 
+            {/* EXPENSES LEDGER TAB */}
+            {activeTab === 'expenses' && (
+              <div>
+                <div className="flex-between mb-4" style={{ flexWrap: 'wrap', gap: '1rem' }}>
+                  <div>
+                    <h1 style={{ fontSize: '1.75rem' }}>Expenses Ledger</h1>
+                    <p style={{ color: 'var(--text-secondary)' }}>Track and manage community-wide expenses and receipts</p>
+                  </div>
+                  <button
+                    className="btn btn-primary"
+                    style={{ padding: '0.6rem 1.25rem', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                    onClick={() => {
+                      setExpenseForm({
+                        title: '',
+                        amount: '',
+                        expense_date: new Date().toISOString().split('T')[0],
+                        category: 'Maintenance',
+                        description: '',
+                        attachment: null
+                      });
+                      setShowAddExpenseModal(true);
+                    }}
+                  >
+                    <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Record Expense
+                  </button>
+                </div>
+
+                {/* Summary Tally Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                  <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <div style={{ padding: '0.75rem', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>Total Expenses Listed</p>
+                      <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: '0.2rem 0 0', color: 'var(--accent)' }}>
+                        ₹{processedExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <div style={{ padding: '0.75rem', borderRadius: '10px', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>Expense Count</p>
+                      <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: '0.2rem 0 0', color: 'var(--text-primary)' }}>
+                        {processedExpenses.length} records
+                      </h3>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filters */}
+                <div className="glass-panel" style={{ padding: '1rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '1.5rem' }}>
+                  <div style={{ flex: 1, minWidth: '240px', position: 'relative' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="Search title, category, description..."
+                      value={expenseSearchQuery}
+                      onChange={(e) => setExpenseSearchQuery(e.target.value)}
+                      style={{ paddingLeft: '2.5rem' }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: '200px' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }} htmlFor="expense-cat-select">Category:</label>
+                    <select
+                      id="expense-cat-select"
+                      className="input-field"
+                      value={selectedExpenseCategory}
+                      onChange={(e) => setSelectedExpenseCategory(e.target.value)}
+                      style={{ padding: '0.5rem' }}
+                    >
+                      <option value="All">All Categories</option>
+                      <option value="Maintenance">Maintenance</option>
+                      <option value="Salaries">Salaries</option>
+                      <option value="Utilities">Utilities</option>
+                      <option value="Repairs">Repairs</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Expense List */}
+                {processedExpenses.length === 0 ? (
+                  <div className="glass-panel" style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>No expenses found matching the search criteria.</p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
+                    {processedExpenses.map(expense => (
+                      <div key={expense.id} className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '180px', border: '1px solid var(--glass-border)', position: 'relative' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                            <span className="badge badge-partial" style={{ fontSize: '0.65rem', padding: '2px 7px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent)' }}>
+                              {expense.category}
+                            </span>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                              {new Date(expense.expense_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                          </div>
+
+                          <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '0.4rem', lineBreak: 'anywhere' }}>
+                            {expense.title}
+                          </h3>
+
+                          {expense.description && (
+                            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.8rem', lineBreak: 'anywhere' }}>
+                              {expense.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '0.75rem', marginTop: '0.5rem' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Amount</span>
+                              <span style={{ fontSize: '1.2rem', fontWeight: '800', color: 'var(--accent)' }}>
+                                ₹{parseFloat(expense.amount).toLocaleString('en-IN')}
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              {expense.attachment_url && (
+                                <a
+                                  href={expense.attachment_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.4rem', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                  title={`View Receipt: ${expense.attachment_name}`}
+                                >
+                                  <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                                  </svg>
+                                </a>
+                              )}
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '0.4rem', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                onClick={() => setEditingExpense({ ...expense })}
+                                title="Edit Expense"
+                              >
+                                <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                </svg>
+                              </button>
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '0.4rem', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}
+                                onClick={() => handleDeleteExpense(expense)}
+                                title="Delete Expense"
+                              >
+                                <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* SETTINGS TAB */}
             {activeTab === 'settings' && (
               <div>
@@ -3935,6 +4354,356 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                   disabled={isSubmittingAdmin}
                 >
                   {isSubmittingAdmin ? 'Resetting...' : 'Reset Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RECORD EXPENSE MODAL */}
+      {showAddExpenseModal && (
+        <div className="modal-overlay">
+          <div className="modal-content glass-panel glow-primary" style={{ maxWidth: '500px' }}>
+            <h2 style={{ marginBottom: '1.5rem' }}>Record Expense</h2>
+            <form onSubmit={handleSaveExpense}>
+              <div className="input-group">
+                <label htmlFor="expense-title-input">Expense Title</label>
+                <input
+                  id="expense-title-input"
+                  type="text"
+                  className="input-field"
+                  placeholder="e.g. Electric Bill July, Plumber Charges"
+                  value={expenseForm.title}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, title: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="input-group">
+                  <label htmlFor="expense-amount-input">Amount (₹)</label>
+                  <input
+                    id="expense-amount-input"
+                    type="number"
+                    step="0.01"
+                    className="input-field"
+                    placeholder="0.00"
+                    value={expenseForm.amount}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="input-group">
+                  <label htmlFor="expense-date-input">Expense Date</label>
+                  <input
+                    id="expense-date-input"
+                    type="date"
+                    className="input-field"
+                    value={expenseForm.expense_date}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, expense_date: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="input-group">
+                <label htmlFor="expense-category-select">Category</label>
+                <select
+                  id="expense-category-select"
+                  className="input-field"
+                  value={expenseForm.category}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                  required
+                >
+                  <option value="Maintenance">Maintenance</option>
+                  <option value="Salaries">Salaries</option>
+                  <option value="Utilities">Utilities</option>
+                  <option value="Repairs">Repairs</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div className="input-group">
+                <label htmlFor="expense-desc-textarea">Description (optional)</label>
+                <textarea
+                  id="expense-desc-textarea"
+                  className="input-field"
+                  rows="3"
+                  placeholder="Additional details about the expense..."
+                  value={expenseForm.description}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
+                  style={{ fontFamily: 'inherit', resize: 'vertical' }}
+                />
+              </div>
+
+              {/* Attachment upload */}
+              <div className="input-group">
+                <label style={{ fontWeight: '600' }}>Receipt / Invoice Attachment (optional)</label>
+                <div
+                  style={{
+                    border: '2px dashed var(--glass-border)',
+                    borderRadius: '10px',
+                    padding: '1.5rem',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    background: 'rgba(255, 255, 255, 0.01)',
+                    transition: 'var(--transition-smooth)'
+                  }}
+                  onClick={() => document.getElementById('expense-attachment-input').click()}
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--primary)'; }}
+                  onDragLeave={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--glass-border)'; }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.style.borderColor = 'var(--glass-border)';
+                    const file = e.dataTransfer.files[0];
+                    if (file) handleExpenseAttachmentFile(file);
+                  }}
+                >
+                  {expenseAttachmentPreview ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', position: 'relative' }}>
+                      <img src={expenseAttachmentPreview} alt="Receipt preview" style={{ maxHeight: '120px', borderRadius: '6px' }} />
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setExpenseForm(prev => ({ ...prev, attachment: null })); setExpenseAttachmentPreview(null); }}
+                        style={{
+                          position: 'absolute', top: '-10px', right: '-10px',
+                          background: 'var(--error, #ef4444)', border: 'none', borderRadius: '50%',
+                          width: '22px', height: '22px', cursor: 'pointer', color: 'white',
+                          fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}
+                      >✕</button>
+                    </div>
+                  ) : expenseForm.attachment ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                      <svg width="32" height="32" fill="none" stroke="var(--primary)" strokeWidth="2" viewBox="0 0 24 24">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                      </svg>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: '600' }}>{expenseForm.attachment.name}</span>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setExpenseForm(prev => ({ ...prev, attachment: null })); }}
+                        style={{ fontSize: '0.75rem', color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}>Remove</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)' }}>
+                      <svg width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+                      </svg>
+                      <span style={{ fontSize: '0.85rem' }}>Drag & drop your invoice/receipt here</span>
+                      <span style={{ fontSize: '0.78rem' }}>or <span style={{ color: 'var(--primary)', fontWeight: '600' }}>click to browse</span></span>
+                      <span style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>JPG, PNG, GIF, WEBP, PDF</span>
+                    </div>
+                  )}
+                </div>
+                <input
+                  id="expense-attachment-input"
+                  type="file"
+                  accept="image/*,application/pdf"
+                  style={{ display: 'none' }}
+                  onChange={(e) => { const file = e.target.files[0]; if (file) handleExpenseAttachmentFile(file); }}
+                />
+              </div>
+
+              <div className="flex-center gap-2" style={{ marginTop: '2rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                  onClick={() => setShowAddExpenseModal(false)}
+                  disabled={isSubmittingExpense}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1 }}
+                  disabled={isSubmittingExpense}
+                >
+                  {isSubmittingExpense ? 'Saving...' : 'Record Expense'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT EXPENSE MODAL */}
+      {editingExpense && (
+        <div className="modal-overlay">
+          <div className="modal-content glass-panel glow-primary" style={{ maxWidth: '500px' }}>
+            <h2 style={{ marginBottom: '1.5rem' }}>Edit Expense</h2>
+            <form onSubmit={handleUpdateExpense}>
+              <div className="input-group">
+                <label htmlFor="edit-expense-title-input">Expense Title</label>
+                <input
+                  id="edit-expense-title-input"
+                  type="text"
+                  className="input-field"
+                  placeholder="e.g. Electric Bill July"
+                  value={editingExpense.title}
+                  onChange={(e) => setEditingExpense({ ...editingExpense, title: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="input-group">
+                  <label htmlFor="edit-expense-amount-input">Amount (₹)</label>
+                  <input
+                    id="edit-expense-amount-input"
+                    type="number"
+                    step="0.01"
+                    className="input-field"
+                    placeholder="0.00"
+                    value={editingExpense.amount}
+                    onChange={(e) => setEditingExpense({ ...editingExpense, amount: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="input-group">
+                  <label htmlFor="edit-expense-date-input">Expense Date</label>
+                  <input
+                    id="edit-expense-date-input"
+                    type="date"
+                    className="input-field"
+                    value={editingExpense.expense_date}
+                    onChange={(e) => setEditingExpense({ ...editingExpense, expense_date: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="input-group">
+                <label htmlFor="edit-expense-category-select">Category</label>
+                <select
+                  id="edit-expense-category-select"
+                  className="input-field"
+                  value={editingExpense.category}
+                  onChange={(e) => setEditingExpense({ ...editingExpense, category: e.target.value })}
+                  required
+                >
+                  <option value="Maintenance">Maintenance</option>
+                  <option value="Salaries">Salaries</option>
+                  <option value="Utilities">Utilities</option>
+                  <option value="Repairs">Repairs</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div className="input-group">
+                <label htmlFor="edit-expense-desc-textarea">Description (optional)</label>
+                <textarea
+                  id="edit-expense-desc-textarea"
+                  className="input-field"
+                  rows="3"
+                  placeholder="Additional details..."
+                  value={editingExpense.description || ''}
+                  onChange={(e) => setEditingExpense({ ...editingExpense, description: e.target.value })}
+                  style={{ fontFamily: 'inherit', resize: 'vertical' }}
+                />
+              </div>
+
+              {/* Attachment upload */}
+              <div className="input-group">
+                <label style={{ fontWeight: '600' }}>Receipt / Invoice Attachment (optional)</label>
+                <div
+                  style={{
+                    border: '2px dashed var(--glass-border)',
+                    borderRadius: '10px',
+                    padding: '1.5rem',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    background: 'rgba(255, 255, 255, 0.01)',
+                    transition: 'var(--transition-smooth)'
+                  }}
+                  onClick={() => document.getElementById('edit-expense-attachment-input').click()}
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--primary)'; }}
+                  onDragLeave={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--glass-border)'; }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.style.borderColor = 'var(--glass-border)';
+                    const file = e.dataTransfer.files[0];
+                    if (file) handleEditingExpenseAttachmentFile(file);
+                  }}
+                >
+                  {editingExpenseAttachmentPreview ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', position: 'relative' }}>
+                      <img src={editingExpenseAttachmentPreview} alt="Receipt preview" style={{ maxHeight: '120px', borderRadius: '6px' }} />
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setEditingExpense(prev => ({ ...prev, newAttachment: null })); setEditingExpenseAttachmentPreview(null); }}
+                        style={{
+                          position: 'absolute', top: '-10px', right: '-10px',
+                          background: 'var(--error, #ef4444)', border: 'none', borderRadius: '50%',
+                          width: '22px', height: '22px', cursor: 'pointer', color: 'white',
+                          fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}
+                      >✕</button>
+                    </div>
+                  ) : editingExpense.newAttachment ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                      <svg width="32" height="32" fill="none" stroke="var(--primary)" strokeWidth="2" viewBox="0 0 24 24">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                      </svg>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: '600' }}>New: {editingExpense.newAttachment.name}</span>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setEditingExpense(prev => ({ ...prev, newAttachment: null })); }}
+                        style={{ fontSize: '0.75rem', color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}>Remove</button>
+                    </div>
+                  ) : editingExpense.attachment_url ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', position: 'relative' }}>
+                      {(editingExpense.attachment_name || '').toLowerCase().match(/\.(jpeg|jpg|gif|png|webp|heic)/) ? (
+                        <img src={editingExpense.attachment_url} alt="Current receipt" style={{ maxHeight: '100px', borderRadius: '6px' }} />
+                      ) : (
+                        <svg width="32" height="32" fill="none" stroke="var(--primary)" strokeWidth="2" viewBox="0 0 24 24">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                        </svg>
+                      )}
+                      <span style={{ fontSize: '0.82rem', color: 'var(--secondary)', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '300px' }}>
+                        Current: {editingExpense.attachment_name || 'Receipt'}
+                      </span>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Click or drag to replace</span>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setEditingExpense({ ...editingExpense, attachment_url: null, attachment_name: null }); }}
+                        style={{
+                          position: 'absolute', top: '-10px', right: '-10px',
+                          background: 'var(--error, #ef4444)', border: 'none', borderRadius: '50%',
+                          width: '22px', height: '22px', cursor: 'pointer', color: 'white',
+                          fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}
+                      >✕</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)' }}>
+                      <svg width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+                      </svg>
+                      <span style={{ fontSize: '0.85rem' }}>Drag & drop your invoice/receipt here</span>
+                      <span style={{ fontSize: '0.78rem' }}>or <span style={{ color: 'var(--primary)', fontWeight: '600' }}>click to browse</span></span>
+                      <span style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>JPG, PNG, GIF, WEBP, PDF</span>
+                    </div>
+                  )}
+                </div>
+                <input
+                  id="edit-expense-attachment-input"
+                  type="file"
+                  accept="image/*,application/pdf"
+                  style={{ display: 'none' }}
+                  onChange={(e) => { const file = e.target.files[0]; if (file) handleEditingExpenseAttachmentFile(file); }}
+                />
+              </div>
+
+              <div className="flex-center gap-2" style={{ marginTop: '2rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                  onClick={() => setEditingExpense(null)}
+                  disabled={isSubmittingExpense}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1 }}
+                  disabled={isSubmittingExpense}
+                >
+                  {isSubmittingExpense ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>

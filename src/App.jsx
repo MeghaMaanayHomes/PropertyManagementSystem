@@ -18,7 +18,7 @@ const SESSION_CHECK_INTERVAL_MS = 30_000;
 // ---------------------------------------------------------------------------
 // Valid tab slugs per role — used to reject unknown paths
 // ---------------------------------------------------------------------------
-const ADMIN_TABS = ['flats', 'ledger'];
+const ADMIN_TABS = ['flats', 'ledger', 'expenses'];
 const RESIDENT_TABS = ['map', 'payments'];
 
 // ---------------------------------------------------------------------------
