@@ -39,7 +39,7 @@ jobs:
       - name: Cleanup Remote Backup File
         if: always()
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ env.SSH_USER }}@${{ secrets.INSTANCE_IP }} "rm -f ${{ env.REMOTE_BACKUP_PATH }}"
+          ssh -i ~/.ssh/id_rsa ${{ env.SSH_USER }}@${{ secrets.INSTANCE_IP }} "sudo rm -f ${{ env.REMOTE_BACKUP_PATH }}"
 
       - name: Upload Backup as Workflow Artifact
         uses: actions/upload-artifact@v4
