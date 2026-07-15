@@ -14,3 +14,30 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the Oxlint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+
+## Docker Setup
+
+A Dockerfile is included to build the application and serve the production build using Vite's preview server.
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) installed.
+
+### Build the Docker Image
+
+Build the container image from the root directory:
+
+```bash
+docker build -t property-management-system .
+```
+
+### Run the Docker Container
+
+Run the container, mapping the container's preview port `4000` to your desired host port (e.g., `4000`):
+
+```bash
+docker run -d -p 4000:4000 --name property-management-system-instance property-management-system
+```
+
+Access the application in your browser at `http://localhost:4000`.
+

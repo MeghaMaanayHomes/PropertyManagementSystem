@@ -1,4 +1,8 @@
-.PHONY: help install dev build lint preview clean
+IMAGE_NAME ?= property-management-system
+IMAGE_TAG  ?= latest
+PORT       ?= 4000
+
+.PHONY: help install dev build lint preview clean docker-build docker-run
 
 help: ## Show available commands
 	@echo "Megha Maanay Homes Portal"
@@ -35,3 +39,11 @@ preview: ## Preview the production build locally
 clean: ## Remove build artifacts and node_modules
 	@echo "Cleaning project..."
 	rm -rf dist node_modules
+
+docker-build: ## Build the Docker image
+	@echo "Building Docker image $(IMAGE_NAME):$(IMAGE_TAG)..."
+	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) .
+
+docker-run: ## Run the Docker container
+	@echo "Running Docker container on port $(PORT)..."
+	docker run --rm -it -p $(PORT):4000 --name $(IMAGE_NAME)-container $(IMAGE_NAME):$(IMAGE_TAG)
