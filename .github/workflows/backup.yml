@@ -8,8 +8,9 @@ on:
 env:
   SSH_USER: 'ubuntu'  # Customize if your server login user is different (e.g. ec2-user, root)
   REMOTE_BACKUP_PATH: '/tmp/postgres_backup.dump'
-  # Customize if you run Postgres via Docker or need custom credentials/options
-  BACKUP_COMMAND: 'pg_dump -U postgres -F c -b -v -f /tmp/postgres_backup.dump'
+  # We run pg_dump as the postgres system user using sudo to satisfy Peer Authentication.
+  # Then we change permissions so the SSH user (e.g. ubuntu) is allowed to read/download it.
+  BACKUP_COMMAND: 'sudo -u postgres pg_dump -F c -b -v -f /tmp/postgres_backup.dump postgres && sudo chmod 644 /tmp/postgres_backup.dump'
 
 jobs:
   backup:
