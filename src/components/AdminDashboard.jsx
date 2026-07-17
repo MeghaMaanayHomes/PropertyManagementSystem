@@ -11,6 +11,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   const [maintenanceRecords, setMaintenanceRecords] = useState([]);
+  const [attachmentsMap, setAttachmentsMap] = useState({});
   const [announcements, setAnnouncements] = useState([]);
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -198,6 +199,22 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
       if (expensesResult?.data) {
         setExpenses(expensesResult.data);
       }
+
+      // Fetch attachments presence in parallel
+      const tempAttachmentsMap = {};
+      if (flatsData) {
+        await Promise.all(flatsData.map(async (f) => {
+          try {
+            const { data: files } = await supabase.storage
+              .from('payment-attachments')
+              .list(f.flat_no);
+            tempAttachmentsMap[f.flat_no] = files?.some(file => file.name === selectedMonth) || false;
+          } catch (e) {
+            tempAttachmentsMap[f.flat_no] = false;
+          }
+        }));
+      }
+      setAttachmentsMap(tempAttachmentsMap);
 
       // Settings
       let currentMaintenanceAmount = 2000;
@@ -725,6 +742,18 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
 
         if (paymentError) throw paymentError;
 
+        // Copy resident's attachment file to the ledger's folder structure
+        if (details.attachment_url) {
+          try {
+            const fileName = details.attachment_url.split('/').pop();
+            await supabase.storage
+              .from('payment-attachments')
+              .copy(fileName, `${req.flat_no}/${details.billing_month}`);
+          } catch (copyErr) {
+            console.error('Error copying attachment on approval:', copyErr);
+          }
+        }
+
       } else if (req.request_type === 'contact_suggestion') {
         const details = req.details || {};
 
@@ -777,14 +806,29 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
     }
   };
 
-  const startRecordingPayment = (flat_no, due, paid, status, record) => {
+  const startRecordingPayment = async (flat_no, due, paid, status, record) => {
     setAdminPaymentAttachment(null);
     setAdminPaymentAttachmentPreview(null);
-    // Derive existing receipt URL from the bucket using deterministic path
-    const existingMonth = selectedMonth;
-    const { data: existingUrlData } = supabase.storage
-      .from('payment-attachments')
-      .getPublicUrl(`${flat_no}/${existingMonth}`);
+    
+    let hasFile = false;
+    let filePublicUrl = '';
+    try {
+      const { data: files } = await supabase.storage
+        .from('payment-attachments')
+        .list(flat_no);
+      
+      const fileInfo = files?.find(f => f.name === selectedMonth);
+      if (fileInfo) {
+        hasFile = true;
+        const { data: existingUrlData } = supabase.storage
+          .from('payment-attachments')
+          .getPublicUrl(`${flat_no}/${selectedMonth}`);
+        filePublicUrl = `${existingUrlData?.publicUrl}?t=${Date.now()}`;
+      }
+    } catch (e) {
+      console.error('Error checking file:', e);
+    }
+
     setRecordingPayment({
       flat_no: flat_no,
       amount_due: due,
@@ -794,7 +838,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
       payment_method: record ? record.payment_method : 'UPI',
       transaction_id: record ? record.transaction_id : '',
       remarks: record ? record.remarks : '',
-      attachment_url: existingUrlData?.publicUrl || ''
+      attachment_url: hasFile ? filePublicUrl : ''
     });
   };
 
@@ -817,10 +861,21 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
     e.preventDefault();
     setIsSubmittingPayment(true);
     try {
+      const storagePath = `${recordingPayment.flat_no}/${selectedMonth}`;
+
+      // If the attachment was cleared/removed, delete it from storage
+      if (!recordingPayment.attachment_url && !adminPaymentAttachment) {
+        try {
+          await supabase.storage
+            .from('payment-attachments')
+            .remove([storagePath]);
+        } catch (storageDelErr) {
+          console.error('Error removing attachment:', storageDelErr);
+        }
+      }
+
       // Upload receipt to storage bucket using deterministic path: {flat_no}/{billing_month}
-      // This allows retrieving the URL later without needing a DB column.
       if (adminPaymentAttachment) {
-        const storagePath = `${recordingPayment.flat_no}/${selectedMonth}`;
         const { error: uploadError } = await supabase.storage
           .from('payment-attachments')
           .upload(storagePath, adminPaymentAttachment, { upsert: true });
@@ -2577,7 +2632,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                             <tr key={flat_no} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
                               <td style={{ padding: '1rem 0.75rem', fontWeight: 'bold' }}>{flat_no}</td>
                               <td style={{ padding: '1rem 0.75rem' }}>
-                                <span className={`badge ${status === 'Paid' ? 'badge-paid' : status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`}>
+                                <span className={`badge badge-status-pill ${status === 'Paid' ? 'badge-paid' : status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`}>
                                   {status}
                                 </span>
                               </td>
@@ -2587,10 +2642,11 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                               <td style={{ padding: '1rem 0.75rem' }}>{date}</td>
                               <td style={{ padding: '1rem 0.75rem' }}>
                                 {method}
-                                {record && (() => {
+                                {record && attachmentsMap[flat_no] && (() => {
                                   const { data: rd } = supabase.storage.from('payment-attachments').getPublicUrl(`${flat_no}/${selectedMonth}`);
+                                  const cacheBuster = record.updated_at ? `?t=${new Date(record.updated_at).getTime()}` : '';
                                   return rd?.publicUrl ? (
-                                    <a href={rd.publicUrl} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '0.5rem', color: 'var(--primary)' }} title="View Receipt">
+                                    <a href={`${rd.publicUrl}${cacheBuster}`} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '0.5rem', color: 'var(--primary)' }} title="View Receipt">
                                       📎
                                     </a>
                                   ) : null;
@@ -2599,10 +2655,10 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                               <td style={{ padding: '1rem 0.75rem', textAlign: 'right' }}>
                                 <button
                                   className="btn btn-secondary"
-                                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', minWidth: '120px', display: 'inline-block', textAlign: 'center' }}
                                   onClick={() => startRecordingPayment(flat_no, due, paid, status, record)}
                                 >
-                                  Record Payment
+                                 {status !== 'Unpaid' ? 'Edit Details' : 'Record Payment'}
                                 </button>
                               </td>
                             </tr>
@@ -2627,7 +2683,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                             {/* Header */}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <span style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-primary)' }}>Flat {flat_no}</span>
-                              <span className={`badge ${badgeClass}`}>{status}</span>
+                              <span className={`badge badge-status-pill ${badgeClass}`}>{status}</span>
                             </div>
 
                             {/* Info rows */}
@@ -2648,10 +2704,11 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                                 <span style={{ color: 'var(--text-muted)' }}>Method</span>
                                 <span style={{ color: 'var(--text-secondary)' }}>
                                   {method}
-                                  {record && (() => {
+                                  {record && attachmentsMap[flat_no] && (() => {
                                     const { data: rd } = supabase.storage.from('payment-attachments').getPublicUrl(`${flat_no}/${selectedMonth}`);
+                                    const cacheBuster = record.updated_at ? `?t=${new Date(record.updated_at).getTime()}` : '';
                                     return rd?.publicUrl ? (
-                                      <a href={rd.publicUrl} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '0.5rem', color: 'var(--primary)', textDecoration: 'none' }}>
+                                      <a href={`${rd.publicUrl}${cacheBuster}`} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '0.5rem', color: 'var(--primary)', textDecoration: 'none' }}>
                                         📎 Receipt
                                       </a>
                                     ) : null;
@@ -2665,7 +2722,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                               style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }}
                               onClick={() => startRecordingPayment(flat_no, due, paid, status, record)}
                             >
-                              Record Payment
+                              {status !== 'Unpaid' ? 'Edit Details' : 'Record Payment'}
                             </button>
                           </div>
                         );
@@ -2776,7 +2833,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                               <td style={{ padding: '1rem 0.75rem', fontWeight: '600' }}>{typeLabel}</td>
                               <td style={{ padding: '1rem 0.75rem', textTransform: 'capitalize' }}>{req.raised_by}</td>
                               <td style={{ padding: '1rem 0.75rem' }}>
-                                <span className={`badge ${statusBadgeClass}`}>
+                                <span className={`badge badge-status-pill ${statusBadgeClass}`}>
                                   {req.status}
                                 </span>
                               </td>
@@ -2889,7 +2946,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                             {/* Header */}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <span style={{ fontWeight: '700', fontSize: '1rem' }}>Flat {req.flat_no}</span>
-                              <span className={`badge ${statusBadgeClass}`}>{req.status}</span>
+                              <span className={`badge badge-status-pill ${statusBadgeClass}`}>{req.status}</span>
                             </div>
 
                             {/* Meta rows */}
@@ -3097,7 +3154,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                               <td style={{ padding: '1rem 0.75rem' }}>{item.title}</td>
                               <td style={{ padding: '1rem 0.75rem' }}>{new Date(item.created_at).toLocaleDateString()}</td>
                               <td style={{ padding: '1rem 0.75rem' }}>
-                                <span className={`badge ${item.status === 'Resolved' ? 'badge-paid' : item.status === 'In Progress' ? 'badge-partial' : 'badge-unpaid'}`}>
+                                <span className={`badge badge-status-pill ${item.status === 'Resolved' ? 'badge-paid' : item.status === 'In Progress' ? 'badge-partial' : 'badge-unpaid'}`}>
                                   {item.status}
                                 </span>
                               </td>
@@ -3122,7 +3179,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                         <div key={item.id} className="glass-panel" style={{ padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', width: '100%' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <span style={{ fontWeight: '700', fontSize: '1rem' }}>Flat {item.flat_no}</span>
-                            <span className={`badge ${item.status === 'Resolved' ? 'badge-paid' : item.status === 'In Progress' ? 'badge-partial' : 'badge-unpaid'}`}>
+                            <span className={`badge badge-status-pill ${item.status === 'Resolved' ? 'badge-paid' : item.status === 'In Progress' ? 'badge-partial' : 'badge-unpaid'}`}>
                               {item.status}
                             </span>
                           </div>
@@ -4160,7 +4217,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
             </div>
             <div style={{ marginBottom: '1.25rem' }}>
               <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Status:</span>
-              <span className={`badge ${selectedComplaint.status === 'Resolved' ? 'badge-paid' : selectedComplaint.status === 'In Progress' ? 'badge-partial' : 'badge-unpaid'}`} style={{ marginLeft: '0.5rem' }}>
+              <span className={`badge badge-status-pill ${selectedComplaint.status === 'Resolved' ? 'badge-paid' : selectedComplaint.status === 'In Progress' ? 'badge-partial' : 'badge-unpaid'}`} style={{ marginLeft: '0.5rem' }}>
                 {selectedComplaint.status}
               </span>
             </div>

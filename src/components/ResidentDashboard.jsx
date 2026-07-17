@@ -1185,7 +1185,7 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
                         </div>
                         <div>
                           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'right' }}>STATUS</p>
-                          <span className={`badge ${currentMonthStatus.status === 'Paid' ? 'badge-paid' : currentMonthStatus.status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`} style={{ fontSize: '0.9rem', padding: '0.3rem 1rem' }}>
+                          <span className={`badge badge-status-pill ${currentMonthStatus.status === 'Paid' ? 'badge-paid' : currentMonthStatus.status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`} style={{ fontSize: '0.9rem', padding: '0.3rem 1rem' }}>
                             {currentMonthStatus.status}
                           </span>
                         </div>
@@ -1482,7 +1482,7 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
                                   <tr key={record.billing_month} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.9rem' }}>
                                     <td style={{ padding: '0.75rem', fontWeight: 'bold' }}>{formatMonthName(record.billing_month)}</td>
                                     <td style={{ padding: '0.75rem' }}>
-                                      <span className={`badge ${record.payment_status === 'Paid' ? 'badge-paid' : record.payment_status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`}>
+                                      <span className={`badge badge-status-pill ${record.payment_status === 'Paid' ? 'badge-paid' : record.payment_status === 'Partially Paid' ? 'badge-partial' : 'badge-unpaid'}`}>
                                         {record.payment_status}
                                       </span>
                                     </td>
@@ -1517,7 +1517,7 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
                               <div key={record.billing_month} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '1rem', border: '1px solid var(--glass-border)' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
                                   <span style={{ fontWeight: 'bold', fontSize: '1rem' }}>{formatMonthName(record.billing_month)}</span>
-                                  <span className={`badge ${statusClass}`}>{record.payment_status}</span>
+                                  <span className={`badge badge-status-pill ${statusClass}`}>{record.payment_status}</span>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', fontSize: '0.85rem' }}>
                                   <div style={{ color: 'var(--text-secondary)' }}>Amount Due</div>
@@ -1898,7 +1898,7 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
                         complaints.map(item => (
                           <div key={item.id} className="glass-card" style={{ padding: '1rem' }}>
                             <div className="flex-between">
-                              <span className={`badge ${item.status === 'Resolved' ? 'badge-paid' : item.status === 'In Progress' ? 'badge-partial' : 'badge-unpaid'}`}>
+                              <span className={`badge badge-status-pill ${item.status === 'Resolved' ? 'badge-paid' : item.status === 'In Progress' ? 'badge-partial' : 'badge-unpaid'}`}>
                                 {item.status}
                               </span>
                               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
@@ -2262,7 +2262,7 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
                                   <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{date}</td>
                                   <td style={{ padding: '0.75rem', fontWeight: 'bold' }}>{typeLabel}</td>
                                   <td style={{ padding: '0.75rem', textTransform: 'capitalize' }}>{req.raised_by}</td>
-                                  <td style={{ padding: '0.75rem' }}><span className={`badge ${statusBadgeClass}`}>{req.status}</span></td>
+                                  <td style={{ padding: '0.75rem' }}><span className={`badge badge-status-pill ${statusBadgeClass}`}>{req.status}</span></td>
                                   <td style={{ padding: '0.75rem', color: 'var(--text-secondary)', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{detailsStr}</td>
                                   <td style={{ padding: '0.75rem', color: req.status === 'Rejected' ? 'var(--accent)' : 'var(--text-secondary)' }}>{req.admin_comments || '-'}</td>
                                 </tr>
@@ -2316,7 +2316,7 @@ export default function ResidentDashboard({ session, onLogout, initialTab = 'ove
                                   <div style={{ fontWeight: 'bold', fontSize: '0.95rem', marginBottom: '0.2rem' }}>{typeLabel}</div>
                                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{date}</div>
                                 </div>
-                                <span className={`badge ${statusBadgeClass}`} style={{ flexShrink: 0 }}>{req.status}</span>
+                                <span className={`badge badge-status-pill ${statusBadgeClass}`} style={{ flexShrink: 0 }}>{req.status}</span>
                               </div>
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem', fontSize: '0.83rem', marginTop: '0.5rem' }}>
                                 <div style={{ color: 'var(--text-secondary)' }}>Raised By</div>
