@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase';
+import { Edit, Trash2 } from 'lucide-react';
 
 export default function AdminDashboard({ session, onLogout, initialTab = 'overview' }) {
   const navigate = useNavigate();
@@ -30,6 +31,18 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
   const [isSubmittingNotice, setIsSubmittingNotice] = useState(false);
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [flatTenantHistory, setFlatTenantHistory] = useState([]);
+  const [flatOwnerHistory, setFlatOwnerHistory] = useState([]);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyType, setHistoryType] = useState('tenant'); // 'tenant' or 'owner'
+  const [historyMode, setHistoryMode] = useState('add'); // 'add' or 'edit'
+  const [editingHistoryId, setEditingHistoryId] = useState(null);
+  const [historyForm, setHistoryForm] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    date_from: '',
+    date_to: ''
+  });
   const [approvals, setApprovals] = useState([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -109,6 +122,10 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
     setEditingExpense(null);
     setExpenseAttachmentPreview(null);
     setEditingExpenseAttachmentPreview(null);
+    setFlatTenantHistory([]);
+    setFlatOwnerHistory([]);
+    setShowHistoryModal(false);
+    setEditingHistoryId(null);
   };
 
   useEffect(() => {
@@ -118,8 +135,10 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
   useEffect(() => {
     if (editingFlat?.flat_no) {
       fetchFlatHistory(editingFlat.flat_no);
+      fetchFlatOwnerHistory(editingFlat.flat_no);
     } else {
       setFlatTenantHistory([]);
+      setFlatOwnerHistory([]);
     }
   }, [editingFlat?.flat_no]);
 
@@ -135,6 +154,232 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
       setFlatTenantHistory(data || []);
     } catch (err) {
       console.error('Error fetching flat tenant history:', err);
+    }
+  };
+
+  const fetchFlatOwnerHistory = async (flatNum) => {
+    try {
+      const { data, error } = await supabase
+        .from('owner_history')
+        .select('*')
+        .eq('flat_no', flatNum)
+        .order('transferred_at', { ascending: false });
+
+      if (error) throw error;
+      setFlatOwnerHistory(data || []);
+    } catch (err) {
+      console.error('Error fetching flat owner history:', err);
+    }
+  };
+
+  const handleOpenAddHistory = (type) => {
+    setHistoryType(type);
+    setHistoryMode('add');
+    setEditingHistoryId(null);
+    setHistoryForm({
+      name: '',
+      phone: '',
+      email: '',
+      date_from: '',
+      date_to: ''
+    });
+    setShowHistoryModal(true);
+  };
+
+  const handleOpenEditHistory = (type, record) => {
+    setHistoryType(type);
+    setHistoryMode('edit');
+    setEditingHistoryId(record.id);
+    if (type === 'tenant') {
+      setHistoryForm({
+        name: record.tenant_name,
+        phone: record.tenant_phone || '',
+        email: record.tenant_email || '',
+        date_from: record.occupied_from ? record.occupied_from.split('T')[0] : '',
+        date_to: record.occupied_to && record.occupied_to !== 'Present' ? record.occupied_to.split('T')[0] : ''
+      });
+    } else {
+      setHistoryForm({
+        name: record.owner_name,
+        phone: record.phone_number || '',
+        email: record.email || '',
+        date_from: record.transferred_at ? record.transferred_at.split('T')[0] : '',
+        date_to: ''
+      });
+    }
+    setShowHistoryModal(true);
+  };
+
+  const handleSaveHistory = async (e) => {
+    e.preventDefault();
+    if (!historyForm.name) {
+      alert('Name is required');
+      return;
+    }
+    if (historyType === 'tenant') {
+      if (editingHistoryId === 'current-tenant') {
+        if (!historyForm.date_from) {
+          alert('Occupancy start date is required');
+          return;
+        }
+      } else {
+        if (!historyForm.date_from || !historyForm.date_to) {
+          alert('Occupancy start and end dates are required');
+          return;
+        }
+      }
+    }
+    if (historyType === 'owner' && !historyForm.date_from) {
+      alert('Transfer date is required');
+      return;
+    }
+
+    try {
+      if (editingHistoryId === 'current-tenant') {
+        // Update current tenant in users table
+        const { error: userError } = await supabase
+          .from('users')
+          .update({
+            name: historyForm.name,
+            phone: historyForm.phone,
+            email: historyForm.email || null
+          })
+          .eq('id', editingFlat.tenant_id);
+        if (userError) throw userError;
+
+        // Update occupancy_from in flats table
+        const { error: flatError } = await supabase
+          .from('flats')
+          .update({
+            occupancy_from: historyForm.date_from
+          })
+          .eq('flat_no', editingFlat.flat_no);
+        if (flatError) throw flatError;
+
+        // Update local editingFlat state
+        setEditingFlat({
+          ...editingFlat,
+          tenant_name: historyForm.name,
+          tenant_phone: historyForm.phone,
+          tenant_email: historyForm.email,
+          occupancy_from: historyForm.date_from
+        });
+
+        await fetchData();
+        setShowHistoryModal(false);
+        return;
+      }
+
+      if (editingHistoryId === 'current-owner') {
+        // Update current owner in users table
+        const { error: userError } = await supabase
+          .from('users')
+          .update({
+            name: historyForm.name,
+            phone: historyForm.phone,
+            email: historyForm.email || null
+          })
+          .eq('id', editingFlat.owner_id);
+        if (userError) throw userError;
+
+        // If owner occupied, also update occupancy_from in flats table
+        if (editingFlat.is_owner_occupied) {
+          const { error: flatError } = await supabase
+            .from('flats')
+            .update({
+              occupancy_from: historyForm.date_from
+            })
+            .eq('flat_no', editingFlat.flat_no);
+          if (flatError) throw flatError;
+        }
+
+        // Update local editingFlat state
+        setEditingFlat({
+          ...editingFlat,
+          owner_name: historyForm.name,
+          phone_number: historyForm.phone,
+          email: historyForm.email,
+          occupancy_from: editingFlat.is_owner_occupied ? historyForm.date_from : editingFlat.occupancy_from
+        });
+
+        await fetchData();
+        setShowHistoryModal(false);
+        return;
+      }
+
+      if (historyType === 'tenant') {
+        const payload = {
+          flat_no: editingFlat.flat_no,
+          tenant_name: historyForm.name,
+          tenant_phone: historyForm.phone,
+          tenant_email: historyForm.email,
+          occupied_from: historyForm.date_from,
+          occupied_to: historyForm.date_to
+        };
+
+        if (historyMode === 'add') {
+          const { error } = await supabase
+            .from('tenant_history')
+            .insert([payload]);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('tenant_history')
+            .update(payload)
+            .eq('id', editingHistoryId);
+          if (error) throw error;
+        }
+        await fetchFlatHistory(editingFlat.flat_no);
+      } else {
+        const payload = {
+          flat_no: editingFlat.flat_no,
+          owner_name: historyForm.name,
+          phone_number: historyForm.phone,
+          email: historyForm.email,
+          transferred_at: historyForm.date_from
+        };
+
+        if (historyMode === 'add') {
+          const { error } = await supabase
+            .from('owner_history')
+            .insert([payload]);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('owner_history')
+            .update(payload)
+            .eq('id', editingHistoryId);
+          if (error) throw error;
+        }
+        await fetchFlatOwnerHistory(editingFlat.flat_no);
+      }
+
+      setShowHistoryModal(false);
+    } catch (err) {
+      alert('Error saving history record: ' + err.message);
+    }
+  };
+
+  const handleDeleteHistory = async (type, id) => {
+    if (!confirm(`Are you sure you want to delete this ${type} history record?`)) return;
+    try {
+      if (type === 'tenant') {
+        const { error } = await supabase
+          .from('tenant_history')
+          .delete()
+          .eq('id', id);
+        if (error) throw error;
+        await fetchFlatHistory(editingFlat.flat_no);
+      } else {
+        const { error } = await supabase
+          .from('owner_history')
+          .delete()
+          .eq('id', id);
+        if (error) throw error;
+        await fetchFlatOwnerHistory(editingFlat.flat_no);
+      }
+    } catch (err) {
+      alert(`Error deleting ${type} history record: ` + err.message);
     }
   };
 
@@ -2098,12 +2343,13 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                               <th style={{ padding: '0.6rem 0.4rem' }}>Tenant Name</th>
                               <th style={{ padding: '0.6rem 0.4rem' }}>Phone</th>
                               <th style={{ padding: '0.6rem 0.4rem' }}>Occupied Range</th>
+                              <th style={{ padding: '0.6rem 0.4rem', textAlign: 'right' }}>Actions</th>
                             </tr>
                           </thead>
                           <tbody>
                             {allHistory.length === 0 ? (
                               <tr>
-                                <td colSpan="3" style={{ textAlign: 'center', padding: '1.5rem 0', color: 'var(--text-muted)' }}>
+                                <td colSpan="4" style={{ textAlign: 'center', padding: '1.5rem 0', color: 'var(--text-muted)' }}>
                                   No tenant records.
                                 </td>
                               </tr>
@@ -2120,12 +2366,147 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                                   <td style={{ padding: '0.6rem 0.4rem', color: 'var(--text-secondary)' }}>
                                     {h.occupied_from ? new Date(h.occupied_from).toLocaleDateString() : '-'} - {h.occupied_to === 'Present' ? 'Present' : (h.occupied_to ? new Date(h.occupied_to).toLocaleDateString() : '-')}
                                   </td>
+                                  <td style={{ padding: '0.6rem 0.4rem', textAlign: 'right' }}>
+                                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                      <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        style={{ padding: '0.35rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                        onClick={() => handleOpenEditHistory('tenant', h)}
+                                        title="Edit"
+                                      >
+                                        <Edit size={14} />
+                                      </button>
+                                      {h.id !== 'current-tenant' && (
+                                        <button
+                                          type="button"
+                                          className="btn btn-secondary"
+                                          style={{ padding: '0.35rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--error)' }}
+                                          onClick={() => handleDeleteHistory('tenant', h.id)}
+                                          title="Delete"
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
                                 </tr>
                               ))
                             )}
                           </tbody>
                         </table>
                       </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ marginTop: '0.75rem', padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                        onClick={() => handleOpenAddHistory('tenant')}
+                      >
+                        <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                          <line x1="12" y1="5" x2="12" y2="19"></line>
+                          <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Add Past Tenant Record
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div className="glass-panel" style={{ padding: '1.5rem', marginTop: '1.5rem' }}>
+                {(() => {
+                  const displayOwnerHistory = [];
+                  if (editingFlat.owner_name) {
+                    displayOwnerHistory.push({
+                      id: 'current-owner',
+                      owner_name: editingFlat.owner_name,
+                      phone_number: editingFlat.phone_number,
+                      email: editingFlat.email,
+                      transferred_at: editingFlat.occupancy_from || editingFlat.created_at || new Date().toISOString(),
+                      is_current: true
+                    });
+                  }
+                  const allOwnerHistory = [...displayOwnerHistory, ...flatOwnerHistory];
+                  return (
+                    <div>
+                      <h3 style={{ fontSize: '1.15rem', color: 'var(--primary)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                        Owner History
+                      </h3>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
+                              <th style={{ padding: '0.6rem 0.4rem' }}>Owner Name</th>
+                              <th style={{ padding: '0.6rem 0.4rem' }}>Phone</th>
+                              <th style={{ padding: '0.6rem 0.4rem' }}>Transfer Date</th>
+                              <th style={{ padding: '0.6rem 0.4rem', textAlign: 'right' }}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {allOwnerHistory.length === 0 ? (
+                              <tr>
+                                <td colSpan="4" style={{ textAlign: 'center', padding: '1.5rem 0', color: 'var(--text-muted)' }}>
+                                  No owner records.
+                                </td>
+                              </tr>
+                            ) : (
+                              allOwnerHistory.map(h => (
+                                <tr key={h.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                                  <td style={{ padding: '0.6rem 0.4rem', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    {h.owner_name}
+                                    {h.is_current && (
+                                      <span className="badge badge-paid" style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: '3px' }}>Current</span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '0.6rem 0.4rem' }}>{h.phone_number || '-'}</td>
+                                  <td style={{ padding: '0.6rem 0.4rem', color: 'var(--text-secondary)' }}>
+                                    {h.transferred_at ? new Date(h.transferred_at).toLocaleDateString() : '-'}
+                                  </td>
+                                  <td style={{ padding: '0.6rem 0.4rem', textAlign: 'right' }}>
+                                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                      <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        style={{ padding: '0.35rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                        onClick={() => handleOpenEditHistory('owner', h)}
+                                        title="Edit"
+                                      >
+                                        <Edit size={14} />
+                                      </button>
+                                      {!h.is_current && (
+                                        <button
+                                          type="button"
+                                          className="btn btn-secondary"
+                                          style={{ padding: '0.35rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--error)' }}
+                                          onClick={() => handleDeleteHistory('owner', h.id)}
+                                          title="Delete"
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ marginTop: '0.75rem', padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                        onClick={() => handleOpenAddHistory('owner')}
+                      >
+                        <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                          <line x1="12" y1="5" x2="12" y2="19"></line>
+                          <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Add Past Owner Record
+                      </button>
                     </div>
                   );
                 })()}
@@ -2254,7 +2635,7 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                           <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                         </svg>
-                        Copy List
+                        Copy List for Reminder Message
                       </button>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
@@ -4761,6 +5142,121 @@ export default function AdminDashboard({ session, onLogout, initialTab = 'overvi
                   disabled={isSubmittingExpense}
                 >
                   {isSubmittingExpense ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD/EDIT TENANT OR OWNER HISTORY RECORD MODAL */}
+      {showHistoryModal && (
+        <div className="modal-overlay flex-center" style={{ zIndex: 1100 }}>
+          <div className="glass-panel" style={{ width: '90%', maxWidth: '500px', padding: '2rem', position: 'relative' }}>
+            <button
+              onClick={() => setShowHistoryModal(false)}
+              style={{ position: 'absolute', top: '1.25rem', right: '1.25rem', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '0.25rem' }}
+            >
+              <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+
+            <h2 style={{ marginBottom: '1.5rem', fontSize: '1.4rem', color: 'var(--primary)' }}>
+              {historyMode === 'add' ? 'Add' : 'Edit'} Past {historyType === 'tenant' ? 'Tenant' : 'Owner'} Record
+            </h2>
+
+            <form onSubmit={handleSaveHistory} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div className="input-group">
+                <label htmlFor="history-name">{historyType === 'tenant' ? 'Tenant' : 'Owner'} Name</label>
+                <input
+                  id="history-name"
+                  type="text"
+                  className="input-field"
+                  value={historyForm.name}
+                  onChange={(e) => setHistoryForm({ ...historyForm, name: e.target.value })}
+                  required
+                  placeholder={`Enter ${historyType === 'tenant' ? 'tenant' : 'owner'} name`}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div className="grid-split-1-1" style={{ gap: '1rem' }}>
+                <div className="input-group">
+                  <label htmlFor="history-phone">Phone Number</label>
+                  <input
+                    id="history-phone"
+                    type="text"
+                    className="input-field"
+                    value={historyForm.phone}
+                    onChange={(e) => setHistoryForm({ ...historyForm, phone: e.target.value })}
+                    placeholder="Optional phone number"
+                    style={{ width: '100%' }}
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label htmlFor="history-email">Email Address</label>
+                  <input
+                    id="history-email"
+                    type="email"
+                    className="input-field"
+                    value={historyForm.email}
+                    onChange={(e) => setHistoryForm({ ...historyForm, email: e.target.value })}
+                    placeholder="Optional email"
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              </div>
+
+              <div className="grid-split-1-1" style={{ gap: '1rem' }}>
+                <div className="input-group">
+                  <label htmlFor="history-date-from">
+                    {historyType === 'tenant' ? 'Occupied From' : 'Transfer Date'}
+                  </label>
+                  <input
+                    id="history-date-from"
+                    type="date"
+                    className="input-field"
+                    value={historyForm.date_from}
+                    onChange={(e) => setHistoryForm({ ...historyForm, date_from: e.target.value })}
+                    required
+                    style={{ width: '100%' }}
+                  />
+                </div>
+
+                {historyType === 'tenant' && editingHistoryId !== 'current-tenant' && (
+                  <div className="input-group">
+                    <label htmlFor="history-date-to">Occupied To</label>
+                    <input
+                      id="history-date-to"
+                      type="date"
+                      className="input-field"
+                      value={historyForm.date_to}
+                      onChange={(e) => setHistoryForm({ ...historyForm, date_to: e.target.value })}
+                      required
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-center gap-2" style={{ marginTop: '1.5rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                  onClick={() => setShowHistoryModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1 }}
+                >
+                  Save Record
                 </button>
               </div>
             </form>

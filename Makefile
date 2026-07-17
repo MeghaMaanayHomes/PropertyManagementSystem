@@ -5,8 +5,6 @@ PORT       ?= 4000
 .PHONY: help install dev build lint preview clean docker-build docker-run
 
 help: ## Show available commands
-	@echo "Megha Maanay Homes Portal"
-	@echo ""
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
