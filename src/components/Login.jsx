@@ -122,19 +122,19 @@ export default function Login({ onLoginSuccess }) {
             src="/logo.png" 
             alt="Megha Maanay Homes Logo" 
             style={{ 
-              maxHeight: '130px', 
+              maxHeight: '100px', 
               width: 'auto', 
-              marginBottom: '1.25rem'
+              marginBottom: '0.25rem'
             }} 
           />
-          <h1 style={{ fontSize: '2rem', background: 'linear-gradient(to right, #6366f1, #14b8a6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '0.25rem' }}>
+          <h1 style={{ fontSize: '1rem', background: 'linear-gradient(to right, #6366f1, #14b8a6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '0.25rem' }}>
             Megha Maanay Homes
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Apartment Management Portal</p>
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)', padding: '0.25rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--glass-border)', padding: '0.25rem', marginBottom: '1.0rem' }}>
           <button
             type="button"
             className="btn"
@@ -241,7 +241,7 @@ export default function Login({ onLoginSuccess }) {
             </div>
           )}
 
-          <div className="input-group" style={{ marginBottom: '2rem' }}>
+          <div className="input-group" style={{ marginBottom: '1.25rem' }}>
             <label htmlFor="password-field">Password</label>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
               <input
