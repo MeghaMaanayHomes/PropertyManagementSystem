@@ -10,6 +10,7 @@ import {
 import Login from './components/Login';
 import AdminDashboard from './components/AdminDashboard';
 import ResidentDashboard from './components/ResidentDashboard';
+import UpdateDetector from './components/UpdateDetector';
 import { supabase } from './supabase';
 import './index.css';
 
@@ -111,75 +112,78 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Login */}
-        <Route
-          path="/login"
-          element={
-            session
-              ? <Navigate to="/overview" replace />
-              : <Login onLoginSuccess={handleLoginSuccess} />
-          }
-        />
-
-        {/* Admin tabs */}
-        {ADMIN_TABS.map(tab => (
+    <>
+      <UpdateDetector />
+      <BrowserRouter>
+        <Routes>
+          {/* Login */}
           <Route
-            key={`admin-${tab}`}
-            path={`/${tab}`}
+            path="/login"
             element={
-              !session
-                ? <Navigate to="/login" replace />
-                : session.role === 'admin'
-                  ? <AdminDashboard session={session} onLogout={handleLogout} initialTab={tab} />
-                  : <Navigate to="/overview" replace />
+              session
+                ? <Navigate to="/overview" replace />
+                : <Login onLoginSuccess={handleLoginSuccess} />
             }
           />
-        ))}
 
-        {/* Resident-only tabs that don't overlap with admin */}
-        {['map', 'payments'].map(tab => (
+          {/* Admin tabs */}
+          {ADMIN_TABS.map(tab => (
+            <Route
+              key={`admin-${tab}`}
+              path={`/${tab}`}
+              element={
+                !session
+                  ? <Navigate to="/login" replace />
+                  : session.role === 'admin'
+                    ? <AdminDashboard session={session} onLogout={handleLogout} initialTab={tab} />
+                    : <Navigate to="/overview" replace />
+              }
+            />
+          ))}
+
+          {/* Resident-only tabs that don't overlap with admin */}
+          {['map', 'payments'].map(tab => (
+            <Route
+              key={`resident-${tab}`}
+              path={`/${tab}`}
+              element={
+                !session
+                  ? <Navigate to="/login" replace />
+                  : (session.role === 'owner' || session.role === 'tenant')
+                    ? <ResidentDashboard session={session} onLogout={handleLogout} initialTab={tab} />
+                    : <Navigate to="/overview" replace />
+              }
+            />
+          ))}
+
+          {/* Shared tab paths — route to correct dashboard by role */}
+          {['overview', 'notices', 'complaints', 'approvals', 'contacts', 'settings'].map(tab => (
+            <Route
+              key={`shared-${tab}`}
+              path={`/${tab}`}
+              element={
+                !session
+                  ? <Navigate to="/login" replace />
+                  : session.role === 'admin'
+                    ? <AdminDashboard session={session} onLogout={handleLogout} initialTab={tab} />
+                    : <ResidentDashboard session={session} onLogout={handleLogout} initialTab={tab} />
+              }
+            />
+          ))}
+
+          {/* Root redirect */}
           <Route
-            key={`resident-${tab}`}
-            path={`/${tab}`}
-            element={
-              !session
-                ? <Navigate to="/login" replace />
-                : (session.role === 'owner' || session.role === 'tenant')
-                  ? <ResidentDashboard session={session} onLogout={handleLogout} initialTab={tab} />
-                  : <Navigate to="/overview" replace />
-            }
+            path="/"
+            element={<Navigate to={session ? '/overview' : '/login'} replace />}
           />
-        ))}
 
-        {/* Shared tab paths — route to correct dashboard by role */}
-        {['overview', 'notices', 'complaints', 'approvals', 'contacts', 'settings'].map(tab => (
+          {/* Catch-all */}
           <Route
-            key={`shared-${tab}`}
-            path={`/${tab}`}
-            element={
-              !session
-                ? <Navigate to="/login" replace />
-                : session.role === 'admin'
-                  ? <AdminDashboard session={session} onLogout={handleLogout} initialTab={tab} />
-                  : <ResidentDashboard session={session} onLogout={handleLogout} initialTab={tab} />
-            }
+            path="*"
+            element={<Navigate to={session ? '/overview' : '/login'} replace />}
           />
-        ))}
-
-        {/* Root redirect */}
-        <Route
-          path="/"
-          element={<Navigate to={session ? '/overview' : '/login'} replace />}
-        />
-
-        {/* Catch-all */}
-        <Route
-          path="*"
-          element={<Navigate to={session ? '/overview' : '/login'} replace />}
-        />
-      </Routes>
-    </BrowserRouter>
+        </Routes>
+      </BrowserRouter>
+    </>
   );
 }
