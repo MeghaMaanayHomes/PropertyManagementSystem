@@ -1,0 +1,49 @@
+name: Postgres Backup
+
+on:
+  workflow_dispatch: # Allows manual trigger from Actions tab
+  schedule:
+    - cron: '0 2 * * *' # Automatically runs daily at 2:00 AM UTC
+
+env:
+  SSH_USER: 'ubuntu'  # Customize if your server login user is different (e.g. ec2-user, root)
+  REMOTE_BACKUP_PATH: '/tmp/postgres_backup.dump'
+  # We run pg_dump as the postgres system user using sudo to satisfy Peer Authentication.
+  # Then we change permissions so the SSH user (e.g. ubuntu) is allowed to read/download it.
+  BACKUP_COMMAND: 'sudo -u postgres pg_dump -F c -b -v -f /tmp/postgres_backup.dump postgres && sudo chmod 644 /tmp/postgres_backup.dump'
+
+jobs:
+  backup:
+    name: Backup Database
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${{ secrets.INSTANCE_IP }}" >> ~/.ssh/known_hosts
+
+      - name: Run Backup on Instance
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ env.SSH_USER }}@${{ secrets.INSTANCE_IP }} "${{ env.BACKUP_COMMAND }}"
+
+      - name: Download Backup File
+        run: |
+          scp -i ~/.ssh/id_rsa ${{ env.SSH_USER }}@${{ secrets.INSTANCE_IP }}:${{ env.REMOTE_BACKUP_PATH }} ./postgres_backup.dump
+
+      - name: Cleanup Remote Backup File
+        if: always()
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ env.SSH_USER }}@${{ secrets.INSTANCE_IP }} "sudo rm -f ${{ env.REMOTE_BACKUP_PATH }}"
+
+      - name: Upload Backup as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-backup-${{ github.run_id }}
+          path: ./postgres_backup.dump
+          retention-days: 7
